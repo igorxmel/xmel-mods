@@ -1144,9 +1144,12 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Строка над полем ввода: видна при любой ширине окна.
+  // Строка над полем ввода: видна при любой ширине окна. Она общая с другими
+  // модами (secret-guard добавляет свою кнопку): берём то, что нарисовали они,
+  // и ставим свою часть сверху.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    const below = await next(e)
+    if (e.props.hasSurvey) return below
     const { Box, Text, Button } = $.ui.resolve(e)
     const list = await read($, limits)
     const now = (await read($, nowAtom)) || (await read($, limitsAt))
@@ -1172,12 +1175,15 @@ export const register: Register = on => {
       )
 
     return (
-      <Box flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
-        <Text color="claude">{face}</Text>
-        {part('5ч', l5)}
-        {part('нед', l7)}
-        <Button key="band-crab" label="🦀 Подробнее" onPress={() => openView($, 'full')} />
-        <Button key="open-rules" label="📏 Правила" onPress={() => undefined} />
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
+          <Text color="claude">{face}</Text>
+          {part('5ч', l5)}
+          {part('нед', l7)}
+          <Button key="band-crab" label="🦀 Подробнее" onPress={() => openView($, 'full')} />
+          <Button key="open-rules" label="📏 Правила" onPress={() => undefined} />
+        </Box>
+        {below.type === 'engine' ? null : below}
       </Box>
     )
   })

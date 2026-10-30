@@ -69,6 +69,8 @@ test('панель рисует лимиты, краба и разбивку', a
 })
 
 test('строка над вводом с кнопками', async ($, on) => {
+  // Под модом рисует движок или другой мод: здесь он ничего не добавляет.
+  on('ui.render', () => ({ type: 'engine', ref: 0 }) as never)
   let opened = 0
   on('ui.open', () => (opened++, { value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
@@ -127,6 +129,8 @@ test('кнопка «Обновить» опрашивает лимиты сам
 })
 
 test('отставшая сессия подтягивает большие цифры из общего файла', async ($, on) => {
+  // Под модом рисует движок или другой мод: здесь он ничего не добавляет.
+  on('ui.render', () => ({ type: 'engine', ref: 0 }) as never)
   on('clock.now', () => ({ value: NOW }))
   on('ui.status', () => ({ value: undefined }))
   on('command.register', () => ({ value: { command: 'crab' } }))
@@ -232,4 +236,28 @@ test('во время ответа краб кодит', async ($, on) => {
   expect(svg).toMatch(/sky-(morning|day|evening|night)/)
   expect(await ui.find({ key: 'to-mini' })).toBeUndefined()
   await ui.unmount()
+})
+
+test('строка над вводом оставляет часть, которую нарисовал другой мод', async ($, on) => {
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>кнопка другого мода</Text>
+  })
+  on('state.get', (_, e, next) =>
+    String((e as { key: string }).key) === 'limits'
+      ? { value: { value: { shape: 'limits-1', value: [{ kind: 'five_hour', percentUsed: 22, resetsAt: '2026-10-30T14:00:00Z' }] }, version: 1 } }
+      : next(e),
+  )
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({
+      plugin: 'usage-crab',
+      component: 'AbovePrompt',
+      requestId: 'above-prompt',
+      surface,
+      props: { hasSurvey: false, bodyColumns: 100 },
+    } as never)
+    expect(await ui.find({ type: 'Text', text: /22%/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /кнопка другого мода/ })).toBeDefined()
+    await ui.unmount()
+  }
 })

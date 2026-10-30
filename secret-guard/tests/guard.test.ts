@@ -57,15 +57,15 @@ test('чувствительные файлы', async () => {
 })
 
 test('разбор git-команд с cd и -C', async () => {
-  const steps = gitSteps('cd bot && git add . && git -C ../web commit -am "fix"', 'D:/Code/VDS')
+  const steps = gitSteps('cd bot && git add . && git -C ../web commit -am "fix"', 'D:/Code/my-bot')
   expect(steps).toEqual([
-    { dir: 'D:/Code/VDS/bot', verb: 'add', args: ['.'] },
-    { dir: 'D:/Code/VDS/bot/../web', verb: 'commit', args: ['-am', 'fix'] },
+    { dir: 'D:/Code/my-bot/bot', verb: 'add', args: ['.'] },
+    { dir: 'D:/Code/my-bot/bot/../web', verb: 'commit', args: ['-am', 'fix'] },
   ])
 })
 
 test('не даёт добавить .env в git', async ($, on) => {
-  on('session.cwd', () => ({ value: 'D:/Code/VDS' }))
+  on('session.cwd', () => ({ value: 'D:/Code/my-bot' }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '' } }))
   on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }))
   mock.clock(on)
@@ -78,7 +78,7 @@ test('не даёт добавить .env в git', async ($, on) => {
 })
 
 test('git add . останавливается, если рядом лежит неигнорируемый .env', async ($, on) => {
-  on('session.cwd', () => ({ value: 'D:/Code/VDS' }))
+  on('session.cwd', () => ({ value: 'D:/Code/my-bot' }))
   on('process.run', (_, e) => {
     const argv = (e as { argv: string[] }).argv
     return {

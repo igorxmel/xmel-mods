@@ -12,6 +12,8 @@ declare module 'claude-code' {
       events: Shaped<GuardEvent[]>
       count: number
       pausedUntil: number
+      now: number
+      knownCount: number
     }
   }
 }
