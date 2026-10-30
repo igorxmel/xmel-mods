@@ -1175,8 +1175,8 @@ export const register: Register = on => {
       )
 
     return (
-      <Box flexDirection="column">
-        <Box flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
+      <Box flexDirection="column" rowGap={1}>
+        <Box flexDirection="row" columnGap={2} rowGap={1} alignItems="center" flexWrap="wrap">
           <Text color="claude">{face}</Text>
           {part('5ч', l5)}
           {part('нед', l7)}

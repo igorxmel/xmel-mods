@@ -283,9 +283,9 @@ export const register: Register = on => {
     const isPaused = until > now
 
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" rowGap={1}>
         {below.type === 'engine' ? null : below}
-        <Box flexDirection="row" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+        <Box flexDirection="row" columnGap={2} rowGap={1} flexWrap="wrap" alignItems="center">
           {isPaused ? (
             <Text color="warning">⏸ Страж на паузе до {fmtTime(until)}</Text>
           ) : (
@@ -299,7 +299,7 @@ export const register: Register = on => {
           ) : (
             <Button key="guard-pause" label="⏸ Пауза 10 мин" onPress={() => setPause($, 10)} />
           )}
-          <Button key="guard-open" label="Подробнее" onPress={() => $.ui.open({ id: PANE, title: '🛡️ Страж секретов' })} />
+          <Button key="guard-open" label="🛡️ Подробнее" onPress={() => $.ui.open({ id: PANE, title: '🛡️ Страж секретов' })} />
         </Box>
       </Box>
     )
