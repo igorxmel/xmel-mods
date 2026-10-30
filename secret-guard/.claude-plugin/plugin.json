@@ -1,0 +1,12 @@
+{
+  "name": "secret-guard",
+  "version": "0.1.0",
+  "description": "Скрывает токены и ключи в выводе инструментов от модели и не даёт закоммитить .env и ключи",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "igorxmel",
+    "url": "https://github.com/igorxmel"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/igorxmel/xmel-mods"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "session-rules",
+  "version": "0.1.0",
+  "description": "Наборы правил из ~/.claude/session-rules, которые включаются и выключаются в каждой сессии отдельно",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "igorxmel",
+    "url": "https://github.com/igorxmel"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/igorxmel/xmel-mods"
+}

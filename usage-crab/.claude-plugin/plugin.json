@@ -1,0 +1,12 @@
+{
+  "name": "usage-crab",
+  "version": "0.1.0",
+  "description": "Панель с крабом: расход лимитов за 5 часов и неделю, время до сброса и на что ушли токены",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "igorxmel",
+    "url": "https://github.com/igorxmel"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/igorxmel/xmel-mods"
+}
