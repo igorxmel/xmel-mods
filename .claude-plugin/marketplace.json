@@ -2,23 +2,23 @@
   "name": "xmel-mods",
   "owner": { "name": "igorxmel", "url": "https://github.com/igorxmel" },
   "metadata": {
-    "description": "Моды для Claude Code: краб с лимитами, переключаемые правила для сессий и страж секретов"
+    "description": "Mods for Claude Code: a usage-limit crab, per-session rule sets and a secret guard"
   },
   "plugins": [
     {
       "name": "usage-crab",
       "source": "./usage-crab",
-      "description": "Краб с лимитами: 5 часов и неделя, время до сброса и на что ушёл расход"
+      "description": "Usage-limit crab: 5-hour and weekly limits, time until reset and what the usage went on"
     },
     {
       "name": "session-rules",
       "source": "./session-rules",
-      "description": "Наборы правил, которые включаются и выключаются для каждой сессии отдельно"
+      "description": "Rule sets you switch on and off for each session separately"
     },
     {
       "name": "secret-guard",
       "source": "./secret-guard",
-      "description": "Прячет токены и ключи от модели и не даёт закоммитить .env"
+      "description": "Hides tokens and keys from the model and stops you from committing .env"
     }
   ]
 }

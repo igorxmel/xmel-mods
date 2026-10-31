@@ -1,7 +1,7 @@
 {
   "name": "session-rules",
   "version": "0.1.0",
-  "description": "Наборы правил из ~/.claude/session-rules, которые включаются и выключаются в каждой сессии отдельно",
+  "description": "Rule sets from ~/.claude/session-rules that you switch on and off per session",
   "types": "./types/index.d.ts",
   "author": {
     "name": "igorxmel",

@@ -1,7 +1,7 @@
 {
   "name": "usage-crab",
   "version": "0.1.0",
-  "description": "Панель с крабом: расход лимитов за 5 часов и неделю, время до сброса и на что ушли токены",
+  "description": "Crab panel: 5-hour and weekly limit usage, time until reset and what the tokens went on",
   "types": "./types/index.d.ts",
   "author": {
     "name": "igorxmel",

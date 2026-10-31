@@ -1,7 +1,7 @@
 {
   "name": "secret-guard",
   "version": "0.1.0",
-  "description": "Скрывает токены и ключи в выводе инструментов от модели и не даёт закоммитить .env и ключи",
+  "description": "Hides tokens and keys in tool output from the model and stops commits of .env and key files",
   "types": "./types/index.d.ts",
   "author": {
     "name": "igorxmel",
