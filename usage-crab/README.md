@@ -1,58 +1,62 @@
 # 🦀 usage-crab
 
-Лимиты Claude за 5 часов и за неделю всегда перед глазами. Показывает время до сброса и на что ушёл расход. В панели живёт пиксельный краб, чьё настроение зависит от лимитов.
+**English** · [Русский](README.ru.md)
 
-<p align="center"><img src="assets/band.png" alt="Строка над полем ввода: 5ч 41%, неделя 63%, кнопки Подробнее и Правила" width="640"></p>
+Your Claude limits for 5 hours and for the week, always in view. Shows time until reset and what the usage went on. A pixel crab lives in the panel, and its mood depends on your limits.
 
-## Установка
+<p align="center"><img src="assets/band.png" alt="Row above the input: 5h 41%, week 63%, Details and Rules buttons" width="640"></p>
+
+> The screenshots show the Russian interface.
+
+## Installation
 
 ```
 /plugin install usage-crab --marketplace igorxmel/xmel-mods
 ```
 
-Другие способы описаны в [общем README](../README.md#установка). Лимиты есть только на подписке (Pro, Max, Team, Enterprise). При входе по API-ключу мод покажет «нет данных».
+Other ways are described in the [main README](../README.md#installation). Limits exist only on a subscription (Pro, Max, Team, Enterprise). When signed in with an API key the mod shows "no data".
 
-## Что умеет
+## Features
 
-**Строка над полем ввода.** Проценты за 5 часов и за неделю и время до сброса. Кнопка «🦀 Подробнее» открывает панель, «📏 Правила» — панель мода [session-rules](../session-rules/), если он установлен. Ниже в этой же области стоит строка мода [secret-guard](../secret-guard/): он добавляет её сам, если установлен.
+**Row above the input.** Percentages for 5 hours and for the week, plus time until reset. The "🦀 Details" button opens the panel; "📏 Rules" opens the panel of the [session-rules](../session-rules/) mod, if installed. Below it, in the same area, sits the row of the [secret-guard](../secret-guard/) mod: it adds that row itself when installed.
 
-<p align="center"><img src="assets/panel.png" alt="Панель usage-crab: краб, полоски лимитов, разбивка расхода" width="360"></p>
+<p align="center"><img src="assets/panel.png" alt="usage-crab panel: crab, limit bars, usage breakdown" width="360"></p>
 
-**Панель** (кнопка «Подробнее» или команда `/crab`):
-- полоски лимитов, которые плавно краснеют от зелёного к красному, и точное время сброса;
-- **«На что ушло»**: разбивка за 5 часов или неделю по проектам, моделям, инструментам и список самых тяжёлых запросов с их текстом;
-- кнопка «↻ Обновить» и 📌, которая решает, открывать ли панель при запуске.
+**Panel** (the Details button or the `/crab` command):
+- limit bars that smoothly shift from green to red, and the exact reset time;
+- **"Where it went"**: a breakdown over 5 hours or the week by project, model and tool, plus a list of the heaviest requests with their text;
+- a "↻ Refresh" button and a 📌 that decides whether the panel opens at startup.
 
-### Краб
+### The crab
 
-Настроение краба зависит от обоих лимитов: пятичасовой решает, насколько он суетится сейчас, недельный — бережётся ли он вообще.
+The crab's mood depends on both limits: the 5-hour one decides how hectic it is right now, the weekly one decides whether it is conserving at all.
 
-<p align="center"><img src="assets/moods.png" alt="Восемь состояний краба" width="900"></p>
+<p align="center"><img src="assets/moods.png" alt="Eight crab states" width="900"></p>
 
-| Условие | Краб |
+| Condition | Crab |
 |---|---|
-| Claude отвечает | кодит на ноутбуке, над ним летят `{ } ; </>` |
-| всё спокойно | гуляет, пьёт кофе, танцует, машет, читает: занятие меняется раз в минуту |
-| 5 часов ≥ 80% | потеет и мельтешит |
-| неделя ≥ 80%, а 5 часов в норме | бережёт неделю: ходит медленно, советует отложить тяжёлое |
-| лимит кончился | спит до сброса |
+| Claude is answering | codes on a laptop, `{ } ; </>` fly above it |
+| all calm | strolls, drinks coffee, dances, waves, reads: the activity changes every minute |
+| 5 hours ≥ 80% | sweats and bustles |
+| week ≥ 80%, 5 hours fine | conserves the week: walks slowly, advises postponing heavy work |
+| limit exhausted | sleeps until the reset |
 
-Фон за ним меняется по часам твоего компьютера, а фразы подстраиваются под время суток:
+The background behind it follows your computer's clock, and the phrases match the time of day:
 
-<p align="center"><img src="assets/day-cycle.png" alt="Утро, день, вечер и ночь" width="900"></p>
+<p align="center"><img src="assets/day-cycle.png" alt="Morning, day, evening and night" width="900"></p>
 
-В терминале краб рисуется символами и не анимируется.
+In the terminal the crab is drawn with characters and does not animate.
 
-## Как это работает
+## How it works
 
-- **Лимиты** приходят двумя путями: вместе с каждым ответом модели и опросом раз в 5 минут. Опрос идёт через тот же вход, что и `/usage`, токен подставляет Claude Code. Если сервер отвечает «слишком часто» (429), все сессии ждут столько, сколько он просит.
-- **Несколько окон.** Сессии делятся цифрами через `~/.claude/usage-crab/limits.json`, поэтому во всех окнах проценты одинаковые. Опрашивает сервер только одна сессия.
-- **«На что ушло»** считается по стоимости токенов: дорогая модель и длинный контекст расходуют лимит быстрее. Деньги не списываются, это просто вес. Учитываются только сессии, где мод был включён. Журнал хранится в `~/.claude/usage-crab/log-*.json` 8 дней.
+- **Limits** arrive two ways: with every model response and by polling every 5 minutes. Polling uses the same endpoint as `/usage`, and Claude Code supplies the token. If the server answers "too many requests" (429), all sessions wait as long as it asks.
+- **Several windows.** Sessions share the numbers through `~/.claude/usage-crab/limits.json`, so every window shows the same percentages. Only one session polls the server.
+- **"Where it went"** is computed from token cost: an expensive model and a long context use up the limit faster. No money is charged; it is just a weight. Only sessions where the mod was enabled are counted. The log is kept in `~/.claude/usage-crab/log-*.json` for 8 days.
 
-Если опрос мешает, его отключает переменная `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Цифры тогда обновляются только после ответов модели.
+If polling gets in the way, the `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` variable turns it off. The numbers then update only after model responses.
 
-## Команды
+## Commands
 
-| Команда | Что делает |
+| Command | What it does |
 |---|---|
-| `/crab` | открыть панель |
+| `/crab` | open the panel |

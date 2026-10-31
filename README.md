@@ -1,31 +1,35 @@
+**English** · [Русский](README.ru.md)
+
 <p align="center">
-  <img src="assets/banner.png" alt="xmel-mods: краб на пляже кодит на ноутбуке" width="760">
+  <img src="assets/banner.png" alt="xmel-mods: a crab coding on a laptop at the beach" width="760">
 </p>
 
 <p align="center">
-  Три мода для <a href="https://code.claude.com/docs/en/plugins/mods/overview">Claude Code</a>:
-  краб с лимитами, правила по сессиям и страж секретов.
+  Three mods for <a href="https://code.claude.com/docs/en/plugins/mods/overview">Claude Code</a>:
+  a crab that shows your usage limits, per-session rule sets, and a secret guard.
 </p>
+
+> The screenshots show the interface in Russian; the mods' UI text is currently Russian only.
 
 ---
 
-## Что внутри
+## What's inside
 
-| Мод | Что делает |
+| Mod | What it does |
 |---|---|
-| 🦀 [**usage-crab**](usage-crab/) | Показывает лимит за 5 часов и за неделю, время до сброса и на что ушёл расход. В панели живёт пиксельный краб: он кодит, пока Claude отвечает, пьёт кофе, танцует, потеет, когда лимит кончается, а фон за ним меняется по времени суток. |
-| 📏 [**session-rules**](session-rules/) | Наборы правил (например, как писать коммиты) хранятся в отдельных файлах и включаются кнопкой в нужной сессии. Можно настроить автовключение для конкретной папки проекта. |
-| 🛡️ [**secret-guard**](secret-guard/) | Прячет токены, ключи и пароли от модели: в выводе команд, в прочитанных файлах и в твоих сообщениях. Не даёт закоммитить `.env` и ключи. Есть кнопки паузы и панель с последними событиями. |
+| 🦀 [**usage-crab**](usage-crab/) | Shows your 5-hour and weekly limits, time until reset, and what the usage went on. A pixel crab lives in the panel: it codes while Claude answers, drinks coffee, dances, sweats when the limit runs out, and its background follows the time of day. |
+| 📏 [**session-rules**](session-rules/) | Rule sets (for example, how to write commits) live in separate files and are switched on per session with one button. Can auto-enable for a specific project folder. |
+| 🛡️ [**secret-guard**](secret-guard/) | Hides tokens, keys and passwords from the model: in command output, in files it reads, and in your messages. Stops you from committing `.env` and keys. Has pause buttons and a panel with recent events. |
 
-Моды независимы друг от друга: ставь все три или только нужные.
+The mods are independent: install all three or only the ones you need.
 
-## Установка
+## Installation
 
-Нужен **Claude Code 2.1.287 или новее**: моды появились в этой версии. Проверить версию можно командой `claude --version`, обновить — `claude update`.
+You need **Claude Code 2.1.287 or newer**, the version that introduced mods. Check with `claude --version`, update with `claude update`.
 
-### В терминале (Claude Code CLI)
+### In the terminal (Claude Code CLI)
 
-Набери в Claude Code по строке на каждый мод:
+Type one line per mod inside Claude Code:
 
 ```
 /plugin install usage-crab --marketplace igorxmel/xmel-mods
@@ -33,35 +37,35 @@
 /plugin install secret-guard --marketplace igorxmel/xmel-mods
 ```
 
-На первый вопрос «Add marketplace?» ответь `y`, затем нажми Enter, чтобы поставить мод для своего пользователя. Мод заработает сразу.
+Answer `y` to the first "Add marketplace?" question, then press Enter to install the mod for your user. It works right away.
 
-То же самое из обычной командной строки:
+The same from a regular shell:
 
 ```bash
 claude plugin install usage-crab --marketplace igorxmel/xmel-mods
 ```
 
-### В приложении Claude (вкладка Code)
+### In the Claude app (Code tab)
 
-Нажми **+** рядом с полем ввода → **Plugins** → **Add marketplace** и введи `igorxmel/xmel-mods`. Затем **Add plugin** и выбери нужные моды.
+Click **+** next to the input field → **Plugins** → **Add marketplace** and enter `igorxmel/xmel-mods`. Then **Add plugin** and pick the mods you want.
 
-### Обновление и удаление
+### Updating and removing
 
 ```bash
 claude plugin update usage-crab@xmel-mods
 claude plugin uninstall usage-crab@xmel-mods
 ```
 
-После обновления в уже открытых сессиях набери `/reload-plugins`.
+After an update, run `/reload-plugins` in sessions that are already open.
 
-## Безопасность
+## Security
 
-У модов тот же доступ к компьютеру, что и у самого Claude Code. Прежде чем ставить чужие моды, загляни в их код. Код этих модов лежит здесь целиком, в папках `hooks/`. Что именно делает каждый мод, расписано в его README.
+Mods have the same access to your computer as Claude Code itself. Read a mod's code before installing someone else's. The code of these mods is here in full, in the `hooks/` folders. Each mod's README spells out what it does.
 
-- **usage-crab** раз в 5 минут спрашивает лимиты у Anthropic через вход твоей сессии: токен подставляет Claude Code, мод его не видит. Кроме этого, мод пишет данные в `~/.claude/usage-crab/`.
-- **session-rules** читает и пишет только `~/.claude/session-rules/`.
-- **secret-guard** никуда не ходит по сети. Найденные значения секретов он держит только в памяти и на диск не пишет.
+- **usage-crab** asks Anthropic for your limits every 5 minutes through your session's own sign-in: Claude Code supplies the token, the mod never sees it. Besides that, it writes data to `~/.claude/usage-crab/`.
+- **session-rules** reads and writes only `~/.claude/session-rules/`.
+- **secret-guard** makes no network calls. It keeps found secret values in memory only and never writes them to disk.
 
-## Лицензия
+## License
 
-[MIT](LICENSE). Пользуйся, меняй, делись.
+[MIT](LICENSE). Use it, change it, share it.

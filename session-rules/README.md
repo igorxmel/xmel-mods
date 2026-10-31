@@ -1,46 +1,50 @@
 # 📏 session-rules
 
-Правила, к которым ты пришёл с Claude в одном проекте (как писать коммиты, стиль кода, язык документации), можно сохранить и включать в любой другой сессии одной кнопкой.
+**English** · [Русский](README.ru.md)
 
-<p align="center"><img src="assets/panel.png" alt="Панель правил: набор commits включён и раскрыт, ещё два выключены" width="380"></p>
+Rules you worked out with Claude in one project (how to write commits, code style, documentation language) can be saved and switched on in any other session with one button.
 
-## Установка
+<p align="center"><img src="assets/panel.png" alt="Rules panel: the commits set is on and expanded, two more are off" width="380"></p>
+
+> The screenshot shows the Russian interface.
+
+## Installation
 
 ```
 /plugin install session-rules --marketplace igorxmel/xmel-mods
 ```
 
-Другие способы описаны в [общем README](../README.md#установка).
+Other ways are described in the [main README](../README.md#installation).
 
-## Как пользоваться
+## How to use
 
-1. **Сохрани правила.** В сессии, где правила уже выработаны, открой панель (`/rules`) и впиши название в поле «Новый набор из этой сессии», например `commits`. Claude сам соберёт правила из разговора и запишет их в файл. Можно и вручную: поле «Новый набор вручную» создаёт пустой файл и сразу открывает его на правку.
-2. **Включи в другой сессии.** Нажми на набор (○ → ●). Правила добавятся в системный промпт Claude и будут действовать до конца сессии. В строке статуса видно, какие наборы включены.
-3. **Автовключение.** «авто» рядом с набором включает его само каждый раз, когда сессия открыта в этой папке проекта.
+1. **Save the rules.** In a session where the rules have already been worked out, open the panel (`/rules`) and type a name into the "New set from this session" field, for example `commits`. Claude collects the rules from the conversation and writes them to a file. You can also do it by hand: the "New set manually" field creates an empty file and opens it for editing right away.
+2. **Enable in another session.** Click a set (○ → ●). The rules are added to Claude's system prompt and apply until the session ends. The status line shows which sets are on.
+3. **Auto-enable.** "auto" next to a set turns it on by itself every time a session is opened in that project folder.
 
-Каждый набор можно раскрыть (`показать`), прочитать и отредактировать прямо в панели: **Enter** сохраняет, **Shift+Enter** переносит строку.
+Each set can be expanded (`show`), read and edited right in the panel: **Enter** saves, **Shift+Enter** inserts a line break.
 
-## Где лежат правила
+## Where the rules live
 
-Обычные Markdown-файлы в `~/.claude/session-rules/`, по одному на набор:
+Plain Markdown files in `~/.claude/session-rules/`, one per set:
 
 ```markdown
-# Правила коммитов
+# Commit rules
 
-- Формат: `тип(область): что изменилось`
-- Заголовок до 72 знаков, без точки
-- Тело обязательно: почему, а не что
+- Format: `type(scope): what changed`
+- Title up to 72 characters, no trailing period
+- Body is required: why, not what
 ```
 
-Первая строка `# …` становится названием набора. Новые и изменённые файлы мод подхватывает сам за несколько секунд. Кнопка «📂 Папка с правилами» открывает эту папку в проводнике.
+The first `# …` line becomes the set's name. The mod picks up new and changed files on its own within a few seconds. The "📂 Rules folder" button opens the folder in the file explorer.
 
-## Команды
+## Commands
 
-| Команда | Что делает |
+| Command | What it does |
 |---|---|
-| `/rules` | открыть панель |
-| `/rules list` | список наборов, ● — включённые |
-| `/rules on <имя>` / `off <имя>` | включить или выключить набор в этой сессии |
-| `/rules auto <имя>` | включать набор автоматически в этой папке |
-| `/rules save <имя>` | попросить Claude записать правила из этой сессии |
-| `/rules reload` | перечитать папку |
+| `/rules` | open the panel |
+| `/rules list` | list the sets, ● marks enabled ones |
+| `/rules on <name>` / `off <name>` | enable or disable a set in this session |
+| `/rules auto <name>` | enable a set automatically in this folder |
+| `/rules save <name>` | ask Claude to write the rules from this session |
+| `/rules reload` | re-read the folder |
