@@ -4,9 +4,9 @@
 
 Your Claude limits for 5 hours and for the week, always in view. Shows time until reset and what the usage went on. A pixel crab lives in the panel, and its mood depends on your limits.
 
-<p align="center"><img src="assets/band.png" alt="Row above the input: 5h 41%, week 63%, Details and Rules buttons" width="640"></p>
+<p align="center"><img src="assets/band.png" alt="Rows above the input: 5h 41%, week 50% with Details and Rules buttons; below, the secret guard row" width="640"></p>
 
-> The interface is English by default; the 🌐 EN · RU button in the panel (or `/crab lang`) switches it to Russian. The screenshots show the Russian interface.
+> The interface is English by default; the 🌐 EN · RU button in the panel (or `/crab lang`) switches it to Russian. The Russian screenshots are in the [Russian README](README.ru.md).
 
 ## Installation
 

@@ -6,7 +6,7 @@ Keeps tokens, keys and passwords away from the model and out of git. You still s
 
 <p align="center"><img src="assets/example.png" alt="A token in a message and in .env replaced by a placeholder, git add -A stopped" width="760"></p>
 
-> The interface is English by default; the 🌐 EN · RU button in the panel (or `/secrets lang`) switches it to Russian. The screenshots show the Russian interface and placeholders.
+> The interface is English by default; the 🌐 EN · RU button in the panel (or `/secrets lang`) switches it to Russian. The screenshots are in English; the Russian ones are in the [Russian README](README.ru.md).
 
 ## Installation
 

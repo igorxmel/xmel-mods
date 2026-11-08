@@ -10,7 +10,7 @@
   English and Russian interface.
 </p>
 
-> The interface is in English by default and switches to Russian with the 🌐 button (see [Language](#language)). The screenshots currently show the Russian interface.
+> The interface is in English by default and switches to Russian with the 🌐 button (see [Language](#language)).
 
 ---
 

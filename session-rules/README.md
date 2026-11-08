@@ -6,7 +6,7 @@ Rules you worked out with Claude in one project (how to write commits, code styl
 
 <p align="center"><img src="assets/panel.png" alt="Rules panel: the commits set is on and expanded, two more are off" width="380"></p>
 
-> The interface is English by default; the 🌐 EN · RU button in the panel (or `/rules lang`) switches it to Russian. The screenshot shows the Russian interface.
+> The interface is English by default; the 🌐 EN · RU button in the panel (or `/rules lang`) switches it to Russian. The Russian screenshot is in the [Russian README](README.ru.md).
 
 ## Installation
 
