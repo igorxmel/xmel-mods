@@ -14,7 +14,7 @@ const PANE = {
   component: 'Pane',
   requestId: 'secret-guard',
   props: {
-    title: '🛡️ Страж секретов',
+    title: '🛡️ Secret guard',
     isFocused: false,
     bodyColumns: 50,
     placement: 'dock',
@@ -29,18 +29,18 @@ test('кнопка паузы в строке над вводом ставит �
   // Под модом рисует другой мод (например, краб): его часть должна уцелеть.
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
-    return <Text>чужая часть строки</Text>
+    return <Text>other mod row</Text>
   })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...(BAND as object), surface } as never)
-    expect(await ui.find({ type: 'Text', text: /чужая часть строки/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Страж работает/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /other mod row/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Guard is on/ })).toBeDefined()
     await ui.press({ key: 'guard-pause' })
-    expect(await ui.find({ type: 'Text', text: /Страж на паузе до/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Guard paused until/ })).toBeDefined()
     expect(await ui.find({ key: 'guard-resume' })).toBeDefined()
     await ui.press({ key: 'guard-resume' })
-    expect(await ui.find({ type: 'Text', text: /Страж работает/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Guard is on/ })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -65,8 +65,8 @@ test('панель: события, пауза на 30 минут, кнопка 
     events: {
       shape: 'events-1',
       value: [
-        { at: NOW - 120_000, kind: 'секрет из .env', where: 'Read', action: 'masked' },
-        { at: NOW - 60_000, kind: 'файлы с секретами в git: .env', where: 'Bash', action: 'blocked' },
+        { at: NOW - 120_000, kind: 'env-secret', where: 'Read', action: 'masked' },
+        { at: NOW - 60_000, kind: 'git-files: .env', where: 'Bash', action: 'blocked' },
       ],
     },
     count: 2,
@@ -79,12 +79,12 @@ test('панель: события, пауза на 30 минут, кнопка 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...(PANE as object), surface } as never)
-    expect(await ui.find({ type: 'Text', text: /Страж работает/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /секрет из \.env/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /файлы с секретами в git/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Запомнено значений из \.env и вывода: 3/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Guard is on/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /secret from \.env/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /secret files in git/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Remembered values from \.env and output: 3/ })).toBeDefined()
     await ui.press({ key: 'pane-pause-30' })
-    expect(await ui.find({ type: 'Text', text: /Страж на паузе/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Guard paused/ })).toBeDefined()
     expect(await ui.find({ key: 'pane-resume' })).toBeDefined()
     await ui.press({ key: 'pane-resume' })
     expect(await ui.find({ key: 'pane-forget' })).toBeDefined()

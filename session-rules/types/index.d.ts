@@ -11,6 +11,7 @@ declare module 'claude-code' {
       openRule: string
       editRule: string
       note: string
+      lang: 'en' | 'ru'
     }
   }
 }

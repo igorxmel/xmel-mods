@@ -22,7 +22,7 @@ test('находит и скрывает секреты из .env', async () => 
   expect(masked).toContain('PORT=8080')
   expect(masked).toContain('DEBUG=true')
   expect(masked).toContain('your_api_key_here')
-  expect(masked).toContain('[скрыто: токен Telegram-бота, …sawq]')
+  expect(masked).toContain('[hidden: Telegram bot token, …sawq]')
 })
 
 test('не трогает обычный вывод', async () => {
@@ -44,7 +44,7 @@ test('повторная маскировка ничего не ломает', a
 
 test('известное значение скрывается и без имени переменной', async () => {
   const found = findSecrets('$ echo $BOT_TOKEN\nsupersecretvalue123', ['supersecretvalue123'])
-  expect(found.map(f => f.kind)).toEqual(['известный секрет'])
+  expect(found.map(f => f.kind)).toEqual(['known-secret'])
 })
 
 test('чувствительные файлы', async () => {
@@ -124,7 +124,7 @@ test('секрет в сообщении пользователя скрывае
   })
   await $.prompt.submit({ text: 'положи в .env: BOT_TOKEN=fsdfsdf_sdfsdh983893y258978939rh0wy893h5@32428yhuhj' })
   expect(reached).not.toContain('fsdfsdf_sdfsdh983893y258978939rh0wy893h5')
-  expect(reached).toContain('[скрыто: секрет из .env')
+  expect(reached).toContain('[hidden: secret from .env')
   expect(reached).toContain('положи в .env')
   const notes = session.appended().filter(r => r.message.type === 'system')
   expect(JSON.stringify(notes)).toContain('secret-guard')

@@ -6,7 +6,7 @@ const PANE = {
   component: 'Pane',
   requestId: 'usage-crab',
   props: {
-    title: '🦀 Лимиты',
+    title: '🦀 Limits',
     isFocused: false,
     bodyColumns: 60,
     placement: 'dock',
@@ -57,7 +57,7 @@ test('панель рисует лимиты, краба и разбивку', a
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: /пятичасов|Клешни дымятся|мелких задач|Потею/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /5-hour limit|Claws are smoking|small tasks|Sweating/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /85%/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /my-bot/ })).toBeDefined()
     await ui.press({ key: 'by-tool' })
@@ -186,7 +186,7 @@ test('на 429 все ждут, а непонятные окна не показ
   } as never)
   await ui.press({ key: 'refresh' })
   expect(JSON.parse(files['C:/u/.claude/usage-crab/limits.json']!).backoffUntil).toBe(NOW + 600_000)
-  expect(await ui.find({ type: 'Text', text: /реже/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /less often/ })).toBeDefined()
   await ui.press({ key: 'refresh' })
   expect(calls).toBe(1)
   await ui.unmount()
@@ -206,7 +206,7 @@ test('краб смотрит на оба лимита', async ($, on) => {
   const mount = () => $.ui.mount({ ...PANE, surface: 'desktop' })
   // 5ч свободен, неделя почти кончилась — бережётся, а не потеет.
   let ui = await mount()
-  expect(await ui.find({ type: 'Text', text: /недел/i })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /the week|weekly/i })).toBeDefined()
   await ui.unmount()
   // 5ч на 50%, неделя 76% — просто занят, никаких «лимит близко».
   limits = [
@@ -214,8 +214,8 @@ test('краб смотрит на оба лимита', async ($, on) => {
     { kind: 'seven_day', percentUsed: 76, resetsAt: '2026-11-03T10:00:00Z' },
   ]
   ui = await mount()
-  expect(await ui.find({ type: 'Text', text: /бодр|темпе|запас ещё|уверенно|тормозим|Полдень|зените|продуктивны|бриз|коммит|просыпаются|Закат|прилив|песочек|Ночь|Совы|Поздновато|Луна/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /почти всё|Потею|дымятся/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /going strong|steady pace|plenty left|confidently|slowing down|Noon|Sun at its peak|productive|sea breeze|first commit|waking up|sunset|Evening tide|sand|Night|Owls|Getting late|moon/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /almost gone|Sweating|smoking/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -230,7 +230,7 @@ test('во время ответа краб кодит', async ($, on) => {
     return next(e)
   })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ type: 'Text', text: /Кодю|клавишам|Компилирую|почти готово/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Coding together|Tap-tap|Compiling|Almost done/ })).toBeDefined()
   const svg = JSON.stringify((await ui.find({ type: 'Svg' }))?.props)
   expect(svg).toContain('9aa0a8')
   expect(svg).toMatch(/sky-(morning|day|evening|night)/)
@@ -260,4 +260,91 @@ test('строка над вводом оставляет часть, котор
     expect(await ui.find({ type: 'Text', text: /кнопка другого мода/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+const withLimits = (list: unknown[] | (() => unknown[])) => (on: On) =>
+  on('state.get', (_, e, next) =>
+    String((e as { key: string }).key) === 'limits'
+      ? { value: { value: { shape: 'limits-1', value: typeof list === 'function' ? list() : list }, version: 1 } }
+      : String((e as { key: string }).key) === 'now'
+        ? { value: { value: NOW, version: 1 } }
+        : next(e),
+  )
+
+test('язык по умолчанию английский, кнопка переключает на русский и обратно и запоминает выбор', async ($, on) => {
+  const files = fakeFs(on, {})
+  withLimits([{ kind: 'five_hour', percentUsed: 30, resetsAt: '2026-10-30T14:00:00Z' }])(on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /Where it went/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /resets in 2h 0m/ })).toBeDefined()
+  await ui.press({ key: 'lang-toggle' })
+  expect(await ui.find({ type: 'Text', text: /На что ушло/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /сброс через 2ч 0м/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Where it went/ })).toBeUndefined()
+  expect(files['C:/u/.claude/xmel-mods-lang.txt']).toBe('ru')
+  await ui.press({ key: 'lang-toggle' })
+  expect(await ui.find({ type: 'Text', text: /Where it went/ })).toBeDefined()
+  expect(files['C:/u/.claude/xmel-mods-lang.txt']).toBe('en')
+  await ui.unmount()
+})
+
+test('язык из общего файла подхватывается при старте сессии', async ($, on) => {
+  on('ui.render', () => ({ type: 'engine', ref: 0 }) as never)
+  on('clock.now', () => ({ value: NOW }))
+  on('ui.status', () => ({ value: undefined }))
+  on('command.register', () => ({ value: { command: 'crab' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('clock.every', () => ({ value: { cancel: () => undefined } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: NOW - 1000, context: {}, rateLimits: [] } }))
+  on('store.get', () => ({ value: undefined }))
+  fakeFs(on, { 'C:/u/.claude/xmel-mods-lang.txt': 'ru\n' })
+  await $.session.start({ cwd: 'D:/Code/my-bot', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({
+    plugin: 'usage-crab',
+    component: 'AbovePrompt',
+    requestId: 'above-prompt',
+    surface: 'desktop',
+    props: { hasSurvey: false, bodyColumns: 100 },
+  } as never)
+  expect(await ui.find({ type: 'Text', text: /нед —/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('прогноз: хватит ли лимита до сброса', async ($, on) => {
+  // «Сейчас» 12:00, пятичасовое окно 09:00–14:00: прошло 60%.
+  const cases: [number, string, RegExp][] = [
+    [30, '2026-10-30T14:00:00Z', /On track: 60% of the window gone, ~50% by reset/],
+    [53, '2026-10-30T14:00:00Z', /Tight: 60% of the window gone, ~88% by reset/],
+    [85, '2026-10-30T14:00:00Z', /Runs out ~1h \d+m before reset \(around \d\d:\d\d\): 60% of the window gone/],
+    // Окно началось две минуты назад: считать темп рано.
+    [1, '2026-10-30T16:58:00Z', /too early to tell/],
+  ]
+  let current: unknown[] = []
+  withLimits(() => current)(on)
+  for (const [used, resetsAt, expected] of cases) {
+    current = [{ kind: 'five_hour', percentUsed: used, resetsAt }]
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect(await ui.find({ type: 'Text', text: expected })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /│/ })).toBeDefined()
+      await ui.unmount()
+    }
+  }
+  // Лимит выбран: прогнозировать нечего.
+  current = [{ kind: 'five_hour', percentUsed: 100, resetsAt: '2026-10-30T14:00:00Z' }]
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /On track|Tight|Runs out/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('прогноз по неделе: 3 дня 2 часа из 7 прошло, 20% израсходовано — всё в порядке', async ($, on) => {
+  withLimits([
+    { kind: 'five_hour', percentUsed: 10, resetsAt: '2026-10-30T14:00:00Z' },
+    { kind: 'seven_day', percentUsed: 20, resetsAt: '2026-11-03T10:00:00Z' },
+  ])(on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /On track: 44% of the window gone, ~45% by reset/ })).toBeDefined()
+  await ui.unmount()
 })

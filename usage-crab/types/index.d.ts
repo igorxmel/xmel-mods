@@ -34,6 +34,7 @@ declare module 'claude-code' {
       pollNote: string
       working: boolean
       pinned: 'full' | 'none'
+      lang: 'en' | 'ru'
     }
   }
 }

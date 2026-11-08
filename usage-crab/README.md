@@ -6,7 +6,7 @@ Your Claude limits for 5 hours and for the week, always in view. Shows time unti
 
 <p align="center"><img src="assets/band.png" alt="Row above the input: 5h 41%, week 63%, Details and Rules buttons" width="640"></p>
 
-> The screenshots show the Russian interface.
+> The interface is English by default; the 🌐 EN · RU button in the panel (or `/crab lang`) switches it to Russian. The screenshots show the Russian interface.
 
 ## Installation
 
@@ -24,8 +24,19 @@ Other ways are described in the [main README](../README.md#installation). Limits
 
 **Panel** (the Details button or the `/crab` command):
 - limit bars that smoothly shift from green to red, and the exact reset time;
+- a **pace forecast** under each bar: will the limit last until the reset (see below);
 - **"Where it went"**: a breakdown over 5 hours or the week by project, model and tool, plus a list of the heaviest requests with their text;
 - a "↻ Refresh" button and a 📌 that decides whether the panel opens at startup.
+
+### Pace forecast
+
+Under each limit the panel tells whether you are likely to make it to the reset. It compares how much of the window has passed with how much you have used:
+
+- the `│` mark on the bar is where *even* use would be right now (for the week: the share of the 7 days gone);
+- if you keep spending at the same rate, the usage at reset would be `used ÷ share of time gone`;
+- the verdict is colored: **on track** (under 85% by reset), **tight** (85–100%) or **runs out** (over 100%, with how long before the reset it happens and around what time).
+
+Example: 3 hours into a 5-hour window with 53% used gives `Tight: 60% of the window gone, ~88% by reset`. Right at the start of a window (first 3%) it says it is too early to tell. When the limit is already used up there is nothing to forecast. The forecast assumes even use, so a week with quiet nights and weekends will usually end lower than predicted.
 
 ### The crab
 
@@ -60,3 +71,4 @@ If polling gets in the way, the `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` var
 | Command | What it does |
 |---|---|
 | `/crab` | open the panel |
+| `/crab lang [en\|ru]` | switch the interface language (without an argument it toggles) |

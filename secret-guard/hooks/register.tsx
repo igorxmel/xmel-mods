@@ -4,6 +4,8 @@ import type { EngineInterface as Engine, Register } from 'claude-code'
 import type { GuardEvent } from '../types'
 import { findSecrets, gitSteps, isSensitiveFile, maskText } from './mask'
 import type { Found } from './mask'
+import { GIT_KIND, STRINGS, WHERE_MESSAGE, kindName, loadLang, otherLang, parseLang, saveLang, whereName } from './strings'
+import type { Lang } from './strings'
 
 const events = atom({ plugin: 'secret-guard', key: 'events' } as const, [], { shape: 'events-1' })
 const count = atom({ plugin: 'secret-guard', key: 'count' } as const, 0)
@@ -13,7 +15,47 @@ const nowAtom = atom({ plugin: 'secret-guard', key: 'now' } as const, 0)
 /** Сколько значений запомнено; сами значения в состояние не попадают. */
 const knownCount = atom({ plugin: 'secret-guard', key: 'knownCount' } as const, 0)
 
+/** Язык интерфейса; общий для модов xmel-mods, подхватывается из файла. */
+const langAtom = atom({ plugin: 'secret-guard', key: 'lang' } as const, 'en')
+
 const PANE = 'secret-guard'
+
+/**
+ * Язык для кода вне отрисовки (статус, тосты, метки для модели). Отрисовка
+ * читает атом, чтобы перерисоваться при смене языка, и кладёт значение сюда.
+ */
+let L: Lang = 'en'
+const S = () => STRINGS[L]
+const kindsText = (kinds: readonly string[]) => kinds.map(k => kindName(L, k)).join(', ')
+
+async function applyLang($: Engine, lang: Lang, isSave: boolean) {
+  L = lang
+  await update($, langAtom, () => lang)
+  if (isSave) await saveLang($, lang)
+  await showStatus($)
+}
+
+/** Подхватывает язык, выбранный в другом моде или другой сессии. */
+async function syncLang($: Engine) {
+  const lang = await loadLang($)
+  if (lang !== (await read($, langAtom))) await applyLang($, lang, false)
+  else L = lang
+}
+
+/** Без аргумента переключает язык на другой, с аргументом ставит указанный. */
+async function toggleLang($: Engine, lang?: Lang) {
+  await applyLang($, lang ?? otherLang(await read($, langAtom)), true)
+}
+
+/** Строка состояния: пауза, счётчик или «включён». */
+async function showStatus($: Engine) {
+  const now = await $.clock.now()
+  const until = await read($, pausedUntil)
+  const n = await read($, count)
+  $.ui.status(
+    until > now ? S().statusPaused(fmtTime(until)) : n > 0 ? S().statusCount(n) : S().statusOn,
+  )
+}
 
 // Сами значения секретов живут только в памяти модуля: не в $.state (его
 // читают другие плагины) и не в $.store (он пишется на диск).
@@ -27,7 +69,7 @@ function maskBlocks(blocks: readonly Block[]): { blocks: Block[]; found: Found[]
     const hits = findSecrets(text, known)
     if (hits.length === 0) return text
     found.push(...hits)
-    return maskText(text, hits)
+    return maskText(text, hits, L)
   }
   const out = blocks.map(block => {
     if (block.type === 'text' && typeof block.text === 'string') {
@@ -65,7 +107,7 @@ async function record($: Engine, kind: string, where: string, action: GuardEvent
   await update($, events, list => [...list, { at, kind, where, action }].slice(-50))
   const n = await update($, count, c => c + 1)
   await syncKnown($)
-  $.ui.status(`🛡️ Страж: скрыто/остановлено ${n}`)
+  $.ui.status(S().statusCount(n))
 }
 
 /** Пауза и возврат: их зовут и команда, и кнопки, поэтому живут здесь. */
@@ -74,7 +116,7 @@ async function setPause($: Engine, minutes: number): Promise<number> {
   const until = now + minutes * 60_000
   await update($, nowAtom, () => now)
   await update($, pausedUntil, () => until)
-  $.ui.status(`🛡️ Страж на паузе до ${fmtTime(until)}`)
+  $.ui.status(S().statusPaused(fmtTime(until)))
   return until
 }
 
@@ -82,7 +124,7 @@ async function resumeGuard($: Engine) {
   const now = await $.clock.now()
   await update($, nowAtom, () => now)
   await update($, pausedUntil, () => 0)
-  $.ui.status('🛡️ Страж включён')
+  $.ui.status(S().statusResumed)
 }
 
 async function forgetKnown($: Engine) {
@@ -135,10 +177,11 @@ const fmtTime = (at: number) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    await syncLang($)
     await $.command.register({
       name: 'secrets',
-      description: 'Страж секретов: что скрыто, пауза и возобновление',
-      argumentHint: '[pause [минут] | resume]',
+      description: S().cmdDescription,
+      argumentHint: S().cmdArgumentHint,
     })
     // Значения из .env текущей папки запоминаем, чтобы скрывать их везде,
     // даже без имени переменной рядом (например, вывод echo $TOKEN).
@@ -157,16 +200,9 @@ export const register: Register = on => {
     $.clock.every(30_000, async () => {
       const t = await $.clock.now()
       await update($, nowAtom, () => t)
+      await syncLang($)
     })
-    const n = await read($, count)
-    const until = await read($, pausedUntil)
-    $.ui.status(
-      until > now
-        ? `🛡️ Страж на паузе до ${fmtTime(until)}`
-        : n > 0
-          ? `🛡️ Страж: скрыто/остановлено ${n}`
-          : '🛡️ Страж включён',
-    )
+    await showStatus($)
     return next(e)
   })
 
@@ -180,7 +216,7 @@ export const register: Register = on => {
     const tool = e.origin.kind === 'tool' ? e.origin.tool : e.door
     const kinds = [...new Set(found.map(f => f.kind))]
     for (const kind of kinds) await record($, kind, tool, 'masked')
-    $.ui.toast(`🛡️ Скрыл от модели: ${kinds.join(', ')} (${tool})`)
+    $.ui.toast(S().toastHidden(kindsText(kinds), tool))
     return next({ ...e, message: { ...e.message, content: blocks } })
   }).catch(($, e, next) => {
     if (next.called) return next(e)
@@ -192,7 +228,7 @@ export const register: Register = on => {
         ...e.message,
         content: e.message.content.map(b =>
           b.type === 'tool_result'
-            ? { ...b, content: '[secret-guard: не смог проверить этот вывод на секреты и скрыл его]' }
+            ? { ...b, content: S().catchHidden }
             : b,
         ),
       },
@@ -203,18 +239,13 @@ export const register: Register = on => {
     if (!GIT_WRITE.test(e.command) || (await isPaused($))) return next(e)
     const bad = await riskyFiles($, e.command)
     if (bad.length === 0) return next(e)
-    await record($, `файлы с секретами в git: ${bad.join(', ')}`, 'Bash', 'blocked')
-    $.ui.toast(`🛡️ Не дал закоммитить: ${bad.join(', ')}`)
-    return {
-      deny:
-        `secret-guard: эта команда отправит в git файлы с секретами: ${bad.join(', ')}. ` +
-        'Не добавляй их. Добавь их в .gitignore; если файл уже в индексе — `git rm --cached <файл>`. ' +
-        'Если пользователь осознанно хочет закоммитить, он сам нажмёт «Пауза» у стража или выполнит /secrets pause.',
-    }
+    await record($, `${GIT_KIND} ${bad.join(', ')}`, 'Bash', 'blocked')
+    $.ui.toast(S().toastBlocked(bad.join(', ')))
+    return { deny: S().denyGit(bad.join(', ')) }
   }).catch(($, e, next) =>
     next.called || !GIT_WRITE.test(e.command)
       ? next(e)
-      : { deny: 'secret-guard не смог проверить эту git-команду на секреты. Проверь файлы вручную или попроси пользователя выполнить /secrets pause.' },
+      : { deny: S().denyGitFailed },
   )
 
   // Секрет, вставленный прямо в сообщение, заменяем меткой до того, как его
@@ -226,47 +257,51 @@ export const register: Register = on => {
     if (found.length === 0) return next(e)
     for (const f of found) known.add(f.value)
     const kinds = [...new Set(found.map(f => f.kind))]
-    for (const kind of kinds) await record($, kind, 'твоё сообщение', 'masked')
-    const result = await next({ ...e, text: maskText(e.text, found) })
-    const note =
-      `🛡️ secret-guard: в твоём сообщении скрыл от модели ${kinds.join(', ')}. ` +
-      'Если секрет нужно передать Claude, выполни /secrets pause и отправь ещё раз.'
+    for (const kind of kinds) await record($, kind, WHERE_MESSAGE, 'masked')
+    const result = await next({ ...e, text: maskText(e.text, found, L) })
+    const note = S().chatNote(kindsText(kinds))
     void $.session.append({ message: { type: 'system', content: [{ type: 'text', text: note }] } })
-    $.ui.toast(`🛡️ Скрыл в сообщении: ${kinds.join(', ')}`)
+    $.ui.toast(S().toastMessage(kindsText(kinds)))
     return result
   })
 
   on('command.run', { command: 'secrets' }, async ($, e) => {
     const [verb = '', arg = ''] = e.args.trim().split(/\s+/)
     const now = await $.clock.now()
+    if (verb === 'lang') {
+      await toggleLang($, parseLang(arg))
+      return { text: S().langSet(S().langName) }
+    }
     if (verb === 'open') {
-      await $.ui.open({ id: PANE, title: '🛡️ Страж секретов' })
-      return { text: 'Панель стража открыта.' }
+      await $.ui.open({ id: PANE, title: S().paneTitle })
+      return { text: S().panelOpened }
     }
     if (verb === 'pause') {
       const minutes = Math.min(120, Math.max(1, Number(arg) || 10))
       await setPause($, minutes)
-      return { text: `Страж на паузе ${minutes} мин: секреты не скрываются, git не проверяется.` }
+      return { text: S().pausedFor(minutes) }
     }
     if (verb === 'resume') {
       await resumeGuard($)
-      return { text: 'Страж снова работает.' }
+      return { text: S().resumed }
     }
     const list = await read($, events)
     const paused = await read($, pausedUntil)
-    const head =
-      paused > now ? `Страж на паузе до ${fmtTime(paused)}.` : 'Страж работает.'
+    const head = paused > now ? S().headPaused(fmtTime(paused)) : S().headWorking
     const lines = list
       .slice(-15)
       .reverse()
-      .map(ev => `${fmtTime(ev.at)}  ${ev.action === 'blocked' ? '⛔' : '🙈'} ${ev.kind} · ${ev.where}`)
+      .map(
+        ev =>
+          `${fmtTime(ev.at)}  ${ev.action === 'blocked' ? '⛔' : '🙈'} ${kindName(L, ev.kind)} · ${whereName(L, ev.where)}`,
+      )
     return {
       text: [
         head,
-        `Запомнено значений из .env и вывода: ${known.size}.`,
-        lines.length ? 'Последнее:\n' + lines.join('\n') : 'Пока ничего не скрыто и не остановлено.',
+        S().remembered(known.size),
+        lines.length ? S().recent + lines.join('\n') : S().nothing,
         '',
-        '/secrets open — панель, /secrets pause [мин] — пауза (по умолчанию 10 мин), /secrets resume — включить.',
+        S().cmdFooter,
       ].join('\n'),
     }
   })
@@ -277,6 +312,9 @@ export const register: Register = on => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
     const { Box, Text, Button } = $.ui.resolve(e)
+    const lang = await read($, langAtom)
+    L = lang
+    const s = STRINGS[lang]
     const now = (await read($, nowAtom)) || 0
     const until = await read($, pausedUntil)
     const n = await read($, count)
@@ -287,19 +325,19 @@ export const register: Register = on => {
         {below.type === 'engine' ? null : below}
         <Box flexDirection="row" columnGap={2} rowGap={1} flexWrap="wrap" alignItems="center">
           {isPaused ? (
-            <Text color="warning">⏸ Страж на паузе до {fmtTime(until)}</Text>
+            <Text color="warning">{s.bandPaused(fmtTime(until))}</Text>
           ) : (
             <Text>
-              <Text color="success">🛡️ Страж работает</Text>
-              {n > 0 && <Text dimColor> · скрыто {n}</Text>}
+              <Text color="success">{s.bandWorking}</Text>
+              {n > 0 && <Text dimColor>{s.bandHidden(n)}</Text>}
             </Text>
           )}
           {isPaused ? (
-            <Button key="guard-resume" variant="primary" label="▶ Включить" onPress={() => resumeGuard($)} />
+            <Button key="guard-resume" variant="primary" label={s.bandResume} onPress={() => resumeGuard($)} />
           ) : (
-            <Button key="guard-pause" label="⏸ Пауза 10 мин" onPress={() => setPause($, 10)} />
+            <Button key="guard-pause" label={s.bandPause} onPress={() => setPause($, 10)} />
           )}
-          <Button key="guard-open" label="🛡️ Подробнее" onPress={() => $.ui.open({ id: PANE, title: '🛡️ Страж секретов' })} />
+          <Button key="guard-open" label={s.bandDetails} onPress={() => $.ui.open({ id: PANE, title: s.paneTitle })} />
         </Box>
       </Box>
     )
@@ -307,6 +345,9 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
+    const lang = await read($, langAtom)
+    L = lang
+    const s = STRINGS[lang]
     const now = (await read($, nowAtom)) || 0
     const until = await read($, pausedUntil)
     const list = await read($, events)
@@ -318,44 +359,40 @@ export const register: Register = on => {
       <Box flexDirection="column" rowGap={1}>
         <Box flexDirection="column">
           <Text weight="semibold" color={isPaused ? 'warning' : 'success'}>
-            {isPaused ? '⏸ Страж на паузе' : '🛡️ Страж работает'}
+            {isPaused ? s.panePaused : s.paneWorking}
           </Text>
-          <Text dimColor>
-            {isPaused
-              ? `До ${fmtTime(until)}: секреты не скрываются, git не проверяется.`
-              : 'Прячет секреты от модели и не даёт закоммитить .env и ключи.'}
-          </Text>
+          <Text dimColor>{isPaused ? s.panePausedHint(fmtTime(until)) : s.paneWorkingHint}</Text>
         </Box>
 
         <Box flexDirection="row" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
           {isPaused ? (
-            <Button key="pane-resume" variant="primary" label="▶ Включить сейчас" onPress={() => resumeGuard($)} />
+            <Button key="pane-resume" variant="primary" label={s.resumeNow} onPress={() => resumeGuard($)} />
           ) : (
             <Box flexDirection="row" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
-              <Text dimColor>Пауза:</Text>
-              <Button key="pane-pause-10" label="10 мин" onPress={() => setPause($, 10)} />
-              <Button key="pane-pause-30" label="30 мин" onPress={() => setPause($, 30)} />
-              <Button key="pane-pause-60" label="1 час" onPress={() => setPause($, 60)} />
+              <Text dimColor>{s.pause}</Text>
+              <Button key="pane-pause-10" label={s.min10} onPress={() => setPause($, 10)} />
+              <Button key="pane-pause-30" label={s.min30} onPress={() => setPause($, 30)} />
+              <Button key="pane-pause-60" label={s.hour1} onPress={() => setPause($, 60)} />
             </Box>
           )}
         </Box>
 
         <Box flexDirection="column">
           <Text>
-            Скрыто или остановлено за сессию: <Text weight="semibold">{n}</Text>
+            {s.hiddenThisSession} <Text weight="semibold">{n}</Text>
           </Text>
-          <Text dimColor>Запомнено значений из .env и вывода: {k}</Text>
+          <Text dimColor>{s.rememberedLine(k)}</Text>
         </Box>
         {k > 0 && (
           <Box flexDirection="row">
-            <Button key="pane-forget" label="Забыть запомненные значения" onPress={() => forgetKnown($)} />
+            <Button key="pane-forget" label={s.forget} onPress={() => forgetKnown($)} />
           </Box>
         )}
 
         <Box flexDirection="column">
-          <Text weight="semibold">Последнее</Text>
+          <Text weight="semibold">{s.recentTitle}</Text>
           {list.length === 0 ? (
-            <Text dimColor>Пока ничего не скрыто и не остановлено.</Text>
+            <Text dimColor>{s.nothing}</Text>
           ) : (
             [...list]
               .slice(-10)
@@ -365,15 +402,25 @@ export const register: Register = on => {
                   <Text dimColor>{fmtTime(ev.at)} </Text>
                   <Text color={ev.action === 'blocked' ? 'error' : undefined}>
                     {ev.action === 'blocked' ? '⛔ ' : '🙈 '}
-                    {ev.kind}
+                    {kindName(lang, ev.kind)}
                   </Text>
-                  <Text dimColor> · {ev.where}</Text>
+                  <Text dimColor> · {whereName(lang, ev.where)}</Text>
                 </Text>
               ))
           )}
         </Box>
 
-        <Text dimColor>Значения секретов нигде не показываются и не записываются на диск.</Text>
+        <Box flexDirection="row" columnGap={2} flexWrap="wrap" alignItems="center">
+          <Text dimColor>{s.neverShown}</Text>
+          <Button key="lang-toggle" plain onPress={() => toggleLang($)}>
+            <Text>
+              <Text dimColor>🌐 </Text>
+              <Text weight={lang === 'en' ? 'semibold' : undefined} dimColor={lang !== 'en'}>EN</Text>
+              <Text dimColor> · </Text>
+              <Text weight={lang === 'ru' ? 'semibold' : undefined} dimColor={lang !== 'ru'}>RU</Text>
+            </Text>
+          </Button>
+        </Box>
       </Box>
     )
   })

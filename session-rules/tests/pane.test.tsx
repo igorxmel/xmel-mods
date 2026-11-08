@@ -5,7 +5,7 @@ const PANE = {
   component: 'Pane',
   requestId: 'session-rules',
   props: {
-    title: '📏 Правила сессии',
+    title: '📏 Session rules',
     isFocused: false,
     bodyColumns: 50,
     placement: 'dock',
@@ -68,9 +68,18 @@ test('правило можно раскрыть, изменить и сохра
   await ui.press({ key: 'edit-btn-commits' })
   await ui.input({ key: 'edit-commits', text: '# Правила коммитов\n- Conventional Commits\n- Без Co-Authored-By' })
   expect(files['C:/Users/user/.claude/session-rules/commits.md']).toContain('Без Co-Authored-By')
-  expect(await ui.find({ type: 'Text', text: /Сохранил commits\.md/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Saved commits\.md/ })).toBeDefined()
 
   await ui.input({ key: 'create-rule', text: 'Стиль кода' })
   expect(Object.keys(files).some(f => f.endsWith('/стиль-кода.md'))).toBe(true)
+
+  // Язык по умолчанию английский; кнопка переключает на русский и запоминает выбор.
+  expect(await ui.find({ type: 'Text', text: /applies in this session|Saved|Files:/ })).toBeDefined()
+  await ui.press({ key: 'lang-toggle' })
+  expect(await ui.find({ type: 'Text', text: /действует в этой сессии/ })).toBeDefined()
+  expect(files['C:/Users/user/.claude/xmel-mods-lang.txt']).toBe('ru')
+  await ui.press({ key: 'lang-toggle' })
+  expect(await ui.find({ type: 'Text', text: /applies in this session/ })).toBeDefined()
+  expect(files['C:/Users/user/.claude/xmel-mods-lang.txt']).toBe('en')
   await ui.unmount()
 })

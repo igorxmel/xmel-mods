@@ -14,6 +14,7 @@ declare module 'claude-code' {
       pausedUntil: number
       now: number
       knownCount: number
+      lang: 'en' | 'ru'
     }
   }
 }

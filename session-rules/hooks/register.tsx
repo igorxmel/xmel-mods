@@ -2,6 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register } from 'claude-code'
 
 import type { Rule } from '../types'
+import { STRINGS, loadLang, otherLang, parseLang, saveLang } from './strings'
+import type { Lang } from './strings'
 
 const PANE = 'session-rules'
 const SECTION = 'session-rules:active'
@@ -20,6 +22,34 @@ const dirAtom = atom({ plugin: 'session-rules', key: 'dir' } as const, '')
 const openRule = atom({ plugin: 'session-rules', key: 'openRule' } as const, '')
 const editRule = atom({ plugin: 'session-rules', key: 'editRule' } as const, '')
 const note = atom({ plugin: 'session-rules', key: 'note' } as const, '')
+/** Язык интерфейса; общий для модов xmel-mods, подхватывается из файла. */
+const langAtom = atom({ plugin: 'session-rules', key: 'lang' } as const, 'en')
+
+/**
+ * Язык для кода вне отрисовки (статус, ответы команд). Отрисовка читает атом,
+ * чтобы перерисоваться при смене языка, и кладёт значение сюда.
+ */
+let L: Lang = 'en'
+const S = () => STRINGS[L]
+
+async function applyLang($: Engine, lang: Lang, isSave: boolean) {
+  L = lang
+  await update($, langAtom, () => lang)
+  if (isSave) await saveLang($, lang)
+  await showStatus($)
+}
+
+/** Подхватывает язык, выбранный в другом моде или другой сессии. */
+async function syncLang($: Engine) {
+  const lang = await loadLang($)
+  if (lang !== (await read($, langAtom))) await applyLang($, lang, false)
+  else L = lang
+}
+
+/** Без аргумента переключает язык на другой, с аргументом ставит указанный. */
+async function toggleLang($: Engine, lang?: Lang) {
+  await applyLang($, lang ?? otherLang(await read($, langAtom)), true)
+}
 
 const slug = (s: string) =>
   s
@@ -66,7 +96,7 @@ async function refresh($: Engine) {
 
 async function showStatus($: Engine) {
   const onNames = await read($, enabled)
-  $.ui.status(onNames.length ? `📏 Правила: ${onNames.join(', ')}` : '📏 Правила: выкл')
+  $.ui.status(onNames.length ? S().statusOn(onNames.join(', ')) : S().statusOff)
 }
 
 async function setRule($: Engine, name: string, isOn: boolean) {
@@ -92,26 +122,13 @@ function findRule(list: readonly Rule[], query: string) {
 
 async function askToSave($: Engine, topic: string, dir: string) {
   const name = slug(topic)
-  await $.prompt.submit({
-    text:
-      `Собери правила на тему «${topic}», которые мы с тобой выработали в этой сессии, ` +
-      `и запиши их в файл ${dir}/${name}.md. Формат: первая строка — заголовок "# ...", ` +
-      'дальше короткий список правил в повелительном наклонении, без пересказа истории ' +
-      'обсуждения. Если файл уже есть, обнови его, не теряя прежних правил. ' +
-      'Панель правил подхватит файл сама.',
-  })
+  await $.prompt.submit({ text: S().askToSave(topic, dir, name) })
 }
-
-const README = [
-  'Здесь лежат наборы правил для мода session-rules.',
-  'Каждый набор — отдельный файл <имя>.md. Первая строка "# Заголовок", дальше сами правила.',
-  'Включаются командой /rules или в панели правил, в каждой сессии отдельно.',
-].join('\r\n')
 
 async function openFolder($: Engine) {
   const dir = await read($, dirAtom)
   const win = dir.replace(/\//g, '\\')
-  if (!(await $.fs.exists(`${dir}/README.txt`))) await $.fs.write(`${dir}/README.txt`, README)
+  if (!(await $.fs.exists(`${dir}/README.txt`))) await $.fs.write(`${dir}/README.txt`, S().readme)
   // explorer.exe и при успехе отвечает кодом 1, поэтому смотрим только на исключения.
   const tries: string[][] = [
     ['explorer.exe', win],
@@ -122,13 +139,13 @@ async function openFolder($: Engine) {
   for (const argv of tries) {
     try {
       await $.process.run(argv, { timeoutMs: 5000 })
-      await update($, note, () => `Открыл папку: ${win}`)
+      await update($, note, () => S().folderOpened(win))
       return
     } catch (err) {
       errors.push(`${argv[0]}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 120))
     }
   }
-  await update($, note, () => `Не смог открыть проводник (${errors.join('; ')}). Папка: ${win}`)
+  await update($, note, () => S().folderFailed(errors.join('; '), win))
 }
 
 async function saveRule($: Engine, name: string, text: string) {
@@ -138,7 +155,7 @@ async function saveRule($: Engine, name: string, text: string) {
   await refresh($)
   await update($, editRule, () => '')
   await update($, openRule, () => name)
-  await update($, note, () => `Сохранил ${name}.md`)
+  await update($, note, () => S().saved(name))
 }
 
 async function createRule($: Engine, title: string) {
@@ -153,23 +170,13 @@ async function createRule($: Engine, title: string) {
   await update($, editRule, () => name)
 }
 
-const HELP = [
-  'Команды:',
-  '  /rules              — открыть панель правил',
-  '  /rules list         — список правил',
-  '  /rules on <имя>     — включить правило в этой сессии',
-  '  /rules off <имя>    — выключить',
-  '  /rules auto <имя>   — включать автоматически в этой папке проекта',
-  '  /rules save <имя>   — попросить Claude записать выработанные в этой сессии правила в файл',
-  '  /rules reload       — перечитать папку с правилами',
-].join('\n')
-
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    await syncLang($)
     await $.command.register({
       name: 'rules',
-      description: 'Включить или выключить наборы правил для этой сессии',
-      argumentHint: '[on|off|auto|save|list|reload] [имя]',
+      description: S().cmdDescription,
+      argumentHint: S().cmdArgumentHint,
     })
     await update($, cwdAtom, () => e.cwd)
     const list = await refresh($)
@@ -184,6 +191,7 @@ export const register: Register = on => {
     await showStatus($)
     // Подхватываем новые и изменённые файлы правил без /rules reload.
     $.clock.every(5000, async () => {
+      await syncLang($)
       const fresh = await loadRules($)
       const cur = await read($, rules)
       if (JSON.stringify(fresh) !== JSON.stringify(cur)) await refresh($)
@@ -199,15 +207,19 @@ export const register: Register = on => {
     const dir = await read($, dirAtom)
 
     if (verb === '') {
-      await $.ui.open({ id: PANE, title: '📏 Правила сессии' })
-      return { text: `Панель правил открыта. Файлы правил лежат в ${dir}` }
+      await $.ui.open({ id: PANE, title: S().paneTitle })
+      return { text: S().panelOpened(dir) }
     }
-    if (verb === 'help') return { text: HELP }
-    if (verb === 'reload') return { text: `Найдено правил: ${list.length}` }
+    if (verb === 'help') return { text: S().help }
+    if (verb === 'lang') {
+      await toggleLang($, parseLang(arg))
+      return { text: S().langSet(S().langName) }
+    }
+    if (verb === 'reload') return { text: S().found(list.length) }
     if (verb === 'list') {
       const onNames = await read($, enabled)
       if (list.length === 0) {
-        return { text: `Правил пока нет. Положи .md файлы в ${dir} или используй /rules save <имя>.` }
+        return { text: S().noneYet(dir) }
       }
       return {
         text: list
@@ -217,38 +229,30 @@ export const register: Register = on => {
     }
     if (verb === 'save') {
       const name = slug(arg)
-      if (!name) return { text: 'Укажи имя: /rules save commits' }
+      if (!name) return { text: S().needName }
       await askToSave($, arg, dir)
-      return { text: `Попросил Claude записать правила в ${dir}/${name}.md` }
+      return { text: S().saveAsked(`${dir}/${name}.md`) }
     }
     if (verb === 'on' || verb === 'off' || verb === 'auto') {
       const rule = findRule(list, arg)
-      if (!rule) return { text: `Правило «${arg}» не найдено. /rules list покажет, какие есть.` }
+      if (!rule) return { text: S().notFound(arg) }
       if (verb === 'auto') {
         const isAuto = await toggleDefault($, rule.name)
         if (isAuto) await setRule($, rule.name, true)
-        return {
-          text: isAuto
-            ? `«${rule.name}» будет включаться само в этой папке проекта.`
-            : `«${rule.name}» больше не включается само в этой папке.`,
-        }
+        return { text: isAuto ? S().autoOn(rule.name) : S().autoOff(rule.name) }
       }
       await setRule($, rule.name, verb === 'on')
       return {
-        text: `${verb === 'on' ? 'Включено' : 'Выключено'}: ${rule.name}`,
-        context: [
-          verb === 'on'
-            ? `С этого момента в этой сессии действует набор правил «${rule.name}» (он в системном промпте).`
-            : `Набор правил «${rule.name}» в этой сессии больше не действует.`,
-        ],
+        text: verb === 'on' ? S().turnedOn(rule.name) : S().turnedOff(rule.name),
+        context: [verb === 'on' ? S().contextOn(rule.name) : S().contextOff(rule.name)],
       }
     }
-    return { text: HELP }
+    return { text: S().help }
   })
 
   // Кнопки «📏 Правила» у краба (в панели и над полем ввода) открывают нашу панель.
   on('ui.press', { plugin: 'usage-crab', element: 'open-rules' }, async ($, e, next) => {
-    await $.ui.open({ id: PANE, title: '📏 Правила сессии' })
+    await $.ui.open({ id: PANE, title: S().paneTitle })
     return next(e)
   })
 
@@ -260,9 +264,9 @@ export const register: Register = on => {
     const active = list.filter(r => onNames.includes(r.name))
     if (active.length === 0) return composed
     const text = [
-      '# Правила, включённые пользователем для этой сессии',
-      'Пользователь сам включил эти наборы правил. Соблюдай их, пока они здесь.',
-      ...active.map(r => `\n## Набор «${r.name}»\n${r.text}`),
+      S().composeTitle,
+      S().composeIntro,
+      ...active.map(r => S().composeSet(r.name, r.text)),
     ].join('\n')
     return {
       sections: [
@@ -275,6 +279,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
+    const lang = await read($, langAtom)
+    L = lang
+    const s = STRINGS[lang]
     const list = await read($, rules)
     const onNames = await read($, enabled)
     const defaults = await read($, projectDefaults)
@@ -293,13 +300,13 @@ export const register: Register = on => {
               label={`${rule.name}.md`}
               value={rule.text}
               rows={14}
-              submitLabel="Сохранить"
+              submitLabel={s.save}
               autoFocus
               onSubmit={value => saveRule($, rule.name, value)}
             />
-            <Text dimColor>Enter — сохранить, Shift+Enter — новая строка.</Text>
+            <Text dimColor>{s.editHint}</Text>
             <Box flexDirection="row" columnGap={1}>
-              <Button key={`cancel-${rule.name}`} label="Отмена" onPress={() => update($, editRule, () => '')} />
+              <Button key={`cancel-${rule.name}`} label={s.cancel} onPress={() => update($, editRule, () => '')} />
             </Box>
           </Box>
         )
@@ -309,7 +316,7 @@ export const register: Register = on => {
           {'Markdown' in ui ? <ui.Markdown text={rule.text} /> : <Text>{rule.text}</Text>}
           {canEdit && (
             <Box flexDirection="row" columnGap={1}>
-              <Button key={`edit-btn-${rule.name}`} label="✏️ Изменить" onPress={() => update($, editRule, () => rule.name)} />
+              <Button key={`edit-btn-${rule.name}`} label={s.edit} onPress={() => update($, editRule, () => rule.name)} />
             </Box>
           )}
         </Box>
@@ -320,8 +327,8 @@ export const register: Register = on => {
       <Box flexDirection="column" rowGap={1}>
         {list.length === 0 ? (
           <Box flexDirection="column">
-            <Text>Правил пока нет.</Text>
-            <Text dimColor>Создай набор ниже или попроси Claude записать правила из этой сессии.</Text>
+            <Text>{s.none}</Text>
+            <Text dimColor>{s.noneHint}</Text>
           </Box>
         ) : (
           list.map(rule => {
@@ -344,14 +351,14 @@ export const register: Register = on => {
                     plain
                     onPress={async () => { if (await toggleDefault($, rule.name)) await setRule($, rule.name, true) }}
                   >
-                    <Text dimColor={!isAuto}>{isAuto ? '★ авто' : '☆ авто'}</Text>
+                    <Text dimColor={!isAuto}>{isAuto ? s.auto : s.notAuto}</Text>
                   </Button>
                   <Button
                     key={`view-${rule.name}`}
                     plain
                     onPress={() => update($, openRule, cur => (cur === rule.name ? '' : rule.name))}
                   >
-                    <Text dimColor>{isOpen ? '▾ скрыть' : '▸ показать'}</Text>
+                    <Text dimColor>{isOpen ? s.hide : s.show}</Text>
                   </Button>
                 </Box>
                 {isOpen ? ruleBody(rule) : <Text dimColor wrap="truncate-end">{rule.title}</Text>}
@@ -363,16 +370,16 @@ export const register: Register = on => {
           <Box flexDirection="column" rowGap={1}>
             <ui.Input
               key="create-rule"
-              label="Новый набор вручную"
-              placeholder="например: стиль кода"
-              submitLabel="Создать"
+              label={s.createManual}
+              placeholder={s.createManualPlaceholder}
+              submitLabel={s.create}
               onSubmit={value => createRule($, value)}
             />
             <ui.Input
               key="new-rule"
-              label="Новый набор из этой сессии (запишет Claude)"
-              placeholder="например: commits"
-              submitLabel="Записать"
+              label={s.createFromSession}
+              placeholder={s.createFromSessionPlaceholder}
+              submitLabel={s.record}
               onSubmit={value => {
                 if (slug(value)) void read($, dirAtom).then(d => askToSave($, value, d))
               }}
@@ -380,13 +387,21 @@ export const register: Register = on => {
           </Box>
         )}
         <Box flexDirection="row" columnGap={1} rowGap={1} flexWrap="wrap">
-          <Button key="open-folder" label="📂 Папка с правилами" onPress={() => openFolder($)} />
-          <Button key="reload" label="Перечитать" onPress={() => refresh($)} />
+          <Button key="open-folder" label={s.openFolder} onPress={() => openFolder($)} />
+          <Button key="reload" label={s.reload} onPress={() => refresh($)} />
           {/* Панель лимитов открывает мод usage-crab по нажатию этой кнопки. */}
-          <Button key="crab" label="🦀 Лимиты" onPress={() => undefined} />
+          <Button key="crab" label={s.crabButton} onPress={() => undefined} />
+          <Button key="lang-toggle" plain onPress={() => toggleLang($)}>
+            <Text>
+              <Text dimColor>🌐 </Text>
+              <Text weight={lang === 'en' ? 'semibold' : undefined} dimColor={lang !== 'en'}>EN</Text>
+              <Text dimColor> · </Text>
+              <Text weight={lang === 'ru' ? 'semibold' : undefined} dimColor={lang !== 'ru'}>RU</Text>
+            </Text>
+          </Button>
         </Box>
-        {message ? <Text dimColor>{message}</Text> : <Text dimColor>Файлы: {dir}</Text>}
-        <Text dimColor>● — действует в этой сессии · ★ авто — включается само в этой папке</Text>
+        {message ? <Text dimColor>{message}</Text> : <Text dimColor>{s.files(dir)}</Text>}
+        <Text dimColor>{s.legend}</Text>
       </Box>
     )
   })

@@ -6,7 +6,7 @@ Rules you worked out with Claude in one project (how to write commits, code styl
 
 <p align="center"><img src="assets/panel.png" alt="Rules panel: the commits set is on and expanded, two more are off" width="380"></p>
 
-> The screenshot shows the Russian interface.
+> The interface is English by default; the 🌐 EN · RU button in the panel (or `/rules lang`) switches it to Russian. The screenshot shows the Russian interface.
 
 ## Installation
 
@@ -48,3 +48,4 @@ The first `# …` line becomes the set's name. The mod picks up new and changed 
 | `/rules auto <name>` | enable a set automatically in this folder |
 | `/rules save <name>` | ask Claude to write the rules from this session |
 | `/rules reload` | re-read the folder |
+| `/rules lang [en\|ru]` | switch the interface language (without an argument it toggles) |

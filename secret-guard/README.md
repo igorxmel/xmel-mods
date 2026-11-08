@@ -6,7 +6,7 @@ Keeps tokens, keys and passwords away from the model and out of git. You still s
 
 <p align="center"><img src="assets/example.png" alt="A token in a message and in .env replaced by a placeholder, git add -A stopped" width="760"></p>
 
-> The screenshots show the Russian interface and placeholders.
+> The interface is English by default; the 🌐 EN · RU button in the panel (or `/secrets lang`) switches it to Russian. The screenshots show the Russian interface and placeholders.
 
 ## Installation
 
@@ -18,7 +18,7 @@ Other ways are described in the [main README](../README.md#installation).
 
 ## What it does
 
-**Hides secrets from the model.** Command output, files that were read and subagent replies are checked before Claude sees them. Whatever is found is replaced with a placeholder, with the last 4 characters left visible so you can tell which key it was. The mod recognizes:
+**Hides secrets from the model.** Command output, files that were read and subagent replies are checked before Claude sees them. Whatever is found is replaced with a placeholder like `[hidden: Telegram bot token, …sawq]`, with the last 4 characters left visible so you can tell which key it was. The placeholder is in the interface language (in Russian: `[скрыто: токен Telegram-бота, …sawq]`); both forms count as already hidden. The mod recognizes:
 - Telegram bot, Discord, GitHub, GitLab and Slack tokens;
 - Anthropic, OpenAI, AWS, Google and Stripe keys;
 - JWTs and private keys (`-----BEGIN … PRIVATE KEY-----`);
@@ -56,6 +56,7 @@ If [usage-crab](../usage-crab/) is installed alongside, both rows stand together
 | `/secrets open` | open the panel |
 | `/secrets pause [min]` | switch the guard off, 10 minutes by default |
 | `/secrets resume` | switch it back on |
+| `/secrets lang [en\|ru]` | switch the interface language (without an argument it toggles) |
 
 ## Limitations
 

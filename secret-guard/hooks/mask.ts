@@ -1,5 +1,8 @@
 // Поиск и маскировка секретов. Чистые функции: без $ и без состояния.
 
+import { HIDDEN_WORD, KIND_NAMES } from './strings'
+import type { Lang } from './strings'
+
 export type Found = { kind: string; value: string }
 
 type Pattern = {
@@ -12,50 +15,51 @@ type Pattern = {
 // Порядок важен: сначала длинные и точные форматы, потом общие.
 const PATTERNS: Pattern[] = [
   {
-    kind: 'приватный ключ',
+    kind: 'private-key',
     re: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
   },
-  { kind: 'ключ Anthropic', re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g },
-  { kind: 'ключ OpenAI', re: /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}/g },
-  { kind: 'токен GitHub', re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g },
-  { kind: 'токен GitLab', re: /\bglpat-[A-Za-z0-9_-]{20,}/g },
-  { kind: 'токен Slack', re: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g },
-  { kind: 'ключ AWS', re: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g },
-  { kind: 'ключ Google', re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
-  { kind: 'ключ Stripe', re: /\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}/g },
-  { kind: 'токен Telegram-бота', re: /\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b/g },
-  { kind: 'токен Discord', re: /\b[MNO][A-Za-z\d_-]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}\b/g },
-  { kind: 'JWT', re: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g },
+  { kind: 'anthropic-key', re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g },
+  { kind: 'openai-key', re: /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}/g },
+  { kind: 'github-token', re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g },
+  { kind: 'gitlab-token', re: /\bglpat-[A-Za-z0-9_-]{20,}/g },
+  { kind: 'slack-token', re: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g },
+  { kind: 'aws-key', re: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g },
+  { kind: 'google-key', re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  { kind: 'stripe-key', re: /\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}/g },
+  { kind: 'telegram-token', re: /\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b/g },
+  { kind: 'discord-token', re: /\b[MNO][A-Za-z\d_-]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}\b/g },
+  { kind: 'jwt', re: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g },
   // postgres://user:ПАРОЛЬ@host
-  { kind: 'пароль в URL', re: /\b[a-z][a-z0-9+.-]*:\/\/[^:/\s@]+:([^@\s/]{3,})@/gi, group: 1 },
+  { kind: 'url-password', re: /\b[a-z][a-z0-9+.-]*:\/\/[^:/\s@]+:([^@\s/]{3,})@/gi, group: 1 },
   // KEY=значение в .env, конфигах, выводе env и прямо посреди сообщения
   {
-    kind: 'секрет из .env',
+    kind: 'env-secret',
     re: /(?<![A-Za-z0-9_])(?:export[ \t]+|set[ \t]+|\$env:)?[A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|PASS|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIALS?|DSN|DATABASE_URL|CONN(?:ECTION)?_?STR(?:ING)?)[A-Za-z0-9_]*[ \t]*[=:][ \t]*["']?([^\s"'#]{4,})/gm,
     group: 1,
   },
   // password: значение в YAML и похожих конфигах
   {
-    kind: 'секрет в конфиге',
+    kind: 'config-secret',
     re: /^[ \t]*(?:password|passwd|secret|client_secret|token|api_key|apikey|bot_token|access_token)[ \t]*[:=][ \t]*["']?([^\s"'#]{4,})/gim,
     group: 1,
   },
   // "password": "значение" в JSON
   {
-    kind: 'секрет в JSON',
+    kind: 'json-secret',
     re: /"(?:password|passwd|secret|client_secret|token|access_token|refresh_token|api_?key|apiKey|private_key|bot_token)"\s*:\s*"([^"]{4,})"/gi,
     group: 1,
   },
 ]
 
 const PLACEHOLDER =
-  /^(?:your|xxx+|\*+|changeme|change_me|example|placeholder|todo|none|null|true|false|undefined|<.*>|\$\{.*\}|\$[A-Z_]+|%[A-Z_]+%|\[скрыто.*)/i
+  /^(?:your|xxx+|\*+|changeme|change_me|example|placeholder|todo|none|null|true|false|undefined|<.*>|\$\{.*\}|\$[A-Z_]+|%[A-Z_]+%|\[(?:скрыто|hidden).*)/i
 
-const MASKED = /\[скрыто: [^\]]*\]/g
+// Уже скрытое место на любом языке.
+const MASKED = /\[(?:скрыто|hidden): [^\]]*\]/g
 
-export function maskLabel(kind: string, value: string): string {
+export function maskLabel(kind: string, value: string, lang: Lang = 'en'): string {
   const tail = value.length >= 16 ? `, …${value.slice(-4)}` : ''
-  return `[скрыто: ${kind}${tail}]`
+  return `[${HIDDEN_WORD[lang]}: ${KIND_NAMES[lang][kind] ?? kind}${tail}]`
 }
 
 /** Находит секреты в тексте, не трогая уже скрытые места. */
@@ -75,17 +79,17 @@ export function findSecrets(text: string, known: Iterable<string> = []): Found[]
   for (const value of known) {
     if (value.length >= 6 && !seen.has(value) && clean.includes(value)) {
       seen.add(value)
-      found.push({ kind: 'известный секрет', value })
+      found.push({ kind: 'known-secret', value })
     }
   }
   return found
 }
 
 /** Заменяет найденные секреты метками. Длинные значения заменяются первыми. */
-export function maskText(text: string, found: readonly Found[]): string {
+export function maskText(text: string, found: readonly Found[], lang: Lang = 'en'): string {
   let out = text
   for (const f of [...found].sort((a, b) => b.value.length - a.value.length)) {
-    out = out.split(f.value).join(maskLabel(f.kind, f.value))
+    out = out.split(f.value).join(maskLabel(f.kind, f.value, lang))
   }
   return out
 }

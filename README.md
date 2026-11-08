@@ -7,9 +7,10 @@
 <p align="center">
   Three mods for <a href="https://code.claude.com/docs/en/plugins/mods/overview">Claude Code</a>:
   a crab that shows your usage limits, per-session rule sets, and a secret guard.
+  English and Russian interface.
 </p>
 
-> The screenshots show the interface in Russian; the mods' UI text is currently Russian only.
+> The interface is in English by default and switches to Russian with the 🌐 button (see [Language](#language)). The screenshots currently show the Russian interface.
 
 ---
 
@@ -22,6 +23,12 @@
 | 🛡️ [**secret-guard**](secret-guard/) | Hides tokens, keys and passwords from the model: in command output, in files it reads, and in your messages. Stops you from committing `.env` and keys. Has pause buttons and a panel with recent events. |
 
 The mods are independent: install all three or only the ones you need.
+
+## Language
+
+English is the default. To switch to Russian (and back), press the **🌐 EN · RU** button in any mod's panel, or type `/crab lang`, `/rules lang` or `/secrets lang`. Add `en` or `ru` to pick a language directly, for example `/crab lang ru`.
+
+The choice is shared: it is stored in one file, `~/.claude/xmel-mods-lang.txt`, so all three mods follow it within a few seconds, in every open session. For secret-guard it also decides the language of the placeholders the model sees (`[hidden: …]` or `[скрыто: …]`).
 
 ## Installation
 

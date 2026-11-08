@@ -2,6 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register, SessionRateLimit } from 'claude-code'
 
 import type { By, Entry, Limit, Window } from '../types'
+import { PHRASES, STRINGS, loadLang, otherLang, parseLang, saveLang } from './strings'
+import type { Activity, DayPart, Lang, Mood } from './strings'
 
 const PANE = 'usage-crab'
 const HOUR = 3_600_000
@@ -22,11 +24,38 @@ const working = atom({ plugin: 'usage-crab', key: 'working' } as const, false)
 /** Что открывать при запуске сессии: большую панель, мини-окошко или ничего. */
 const pinned = atom({ plugin: 'usage-crab', key: 'pinned' } as const, 'full')
 const MINI = 'usage-crab-mini'
+/** Язык интерфейса; общий для модов xmel-mods, подхватывается из файла. */
+const langAtom = atom({ plugin: 'usage-crab', key: 'lang' } as const, 'en')
+
+/**
+ * Язык для кода вне отрисовки (статус, заметки об опросе). Отрисовка читает
+ * атом, чтобы перерисоваться при смене языка, и кладёт значение сюда.
+ */
+let L: Lang = 'en'
+const S = () => STRINGS[L]
+
+async function applyLang($: Engine, lang: Lang, isSave: boolean) {
+  L = lang
+  await update($, langAtom, () => lang)
+  if (isSave) await saveLang($, lang)
+}
+
+/** Подхватывает язык, выбранный в другом моде или другой сессии. */
+async function syncLang($: Engine) {
+  const lang = await loadLang($)
+  if (lang !== (await read($, langAtom))) await applyLang($, lang, false)
+  else L = lang
+}
+
+/** Без аргумента переключает язык на другой, с аргументом ставит указанный. */
+async function toggleLang($: Engine, lang?: Lang) {
+  await applyLang($, lang ?? otherLang(await read($, langAtom)), true)
+}
 
 async function openView($: Engine, _view: 'full') {
   // Мини-окошко из прошлой версии больше не нужно — закрываем, если висит.
   await $.ui.close({ id: MINI })
-  await $.ui.open({ id: PANE, title: '🦀 Лимиты' })
+  await $.ui.open({ id: PANE, title: S().paneTitle })
 }
 
 async function setPinned($: Engine, value: 'full' | 'none') {
@@ -107,7 +136,7 @@ const sameLimits = (a: readonly Limit[], b: readonly Limit[]) =>
 function showStatus($: Engine, list: readonly Limit[]) {
   const p5 = pick(list, 'five_hour')
   const p7 = pick(list, 'seven_day')
-  $.ui.status(`🦀 5ч ${p5 ? pct(p5.percentUsed) : '—'} · нед ${p7 ? pct(p7.percentUsed) : '—'}`)
+  $.ui.status(S().statusLine(p5 ? pct(p5.percentUsed) : '—', p7 ? pct(p7.percentUsed) : '—'))
 }
 
 /** Подтягивает в эту сессию то, что узнали другие. */
@@ -147,29 +176,110 @@ async function syncLog($: Engine) {
 const pct = (n: number) => `${Math.round(n)}%`
 const tok = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`
-const DAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
 const pad = (n: number) => String(n).padStart(2, '0')
 
-function untilText(resetsAt: string | undefined, now: number) {
-  if (!resetsAt) return 'время сброса неизвестно'
-  const at = Date.parse(resetsAt)
-  const left = at - now
-  if (left <= 0) return 'уже сбросился'
-  const d = new Date(at)
-  const clock = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  const mins = Math.ceil(left / 60_000)
+/** Сколько осталось в виде «2d 3h» / «1h 5m» / «40m». */
+function spanText(ms: number, lang: Lang = L): string {
+  const u = STRINGS[lang].units
+  const mins = Math.max(0, Math.ceil(ms / 60_000))
   const days = Math.floor(mins / 1440)
   const hours = Math.floor((mins % 1440) / 60)
   const m = mins % 60
-  const span = days > 0 ? `${days}д ${hours}ч` : hours > 0 ? `${hours}ч ${m}м` : `${m}м`
-  const when = left > 20 * HOUR ? `${DAYS[d.getDay()]} ${clock}` : clock
-  return `сброс через ${span} (${when})`
+  return days > 0 ? `${days}${u.d} ${hours}${u.h}` : hours > 0 ? `${hours}${u.h} ${m}${u.m}` : `${m}${u.m}`
 }
 
-const bar = (p: number, width: number) => {
-  const full = Math.max(0, Math.min(width, Math.round((p / 100) * width)))
-  return '█'.repeat(full) + '░'.repeat(width - full)
+const clockText = (at: number) => {
+  const d = new Date(at)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+
+type Until = { kind: 'unknown' | 'done' } | { kind: 'left'; span: string; when: string }
+
+function untilInfo(resetsAt: string | undefined, now: number, lang: Lang = L): Until {
+  if (!resetsAt) return { kind: 'unknown' }
+  const at = Date.parse(resetsAt)
+  const left = at - now
+  if (left <= 0) return { kind: 'done' }
+  const when = left > 20 * HOUR ? `${STRINGS[lang].days[new Date(at).getDay()]} ${clockText(at)}` : clockText(at)
+  return { kind: 'left', span: spanText(left, lang), when }
+}
+
+function untilText(resetsAt: string | undefined, now: number, lang: Lang = L) {
+  const s = STRINGS[lang]
+  const u = untilInfo(resetsAt, now, lang)
+  return u.kind === 'unknown' ? s.resetUnknown : u.kind === 'done' ? s.resetDone : s.resetsIn(u.span, u.when)
+}
+
+/**
+ * Полоска из █ и ░. Если задан marker (0–100), в этом месте стоит чёрточка:
+ * так видно, где был бы расход при ровной трате.
+ */
+const barParts = (p: number, width: number, marker?: number) => {
+  const full = Math.max(0, Math.min(width, Math.round((p / 100) * width)))
+  const cells = [...'█'.repeat(full) + '░'.repeat(width - full)]
+  if (marker === undefined) return { before: cells.join(''), mark: '', after: '' }
+  const at = Math.max(0, Math.min(width - 1, Math.round((marker / 100) * width)))
+  return { before: cells.slice(0, at).join(''), mark: '│', after: cells.slice(at + 1).join('') }
+}
+const bar = (p: number, width: number) => barParts(p, width).before
+
+// ---------- прогноз: хватит ли лимита до сброса ----------
+
+const KIND_WINDOW_MS: Record<string, number> = {
+  five_hour: 5 * HOUR,
+  seven_day: 7 * 24 * HOUR,
+  seven_day_opus: 7 * 24 * HOUR,
+  seven_day_sonnet: 7 * 24 * HOUR,
+}
+
+type Pace = {
+  /** Сколько окна уже прошло, % по времени. */
+  elapsed: number
+  /** Сколько выйдет к сбросу, если темп сохранится, %. */
+  projected: number
+  verdict: 'early' | 'ok' | 'tight' | 'over'
+  /** Когда лимит кончится при нынешнем темпе (только для 'over'). */
+  runsOutAt?: number
+  /** За сколько до сброса это случится, мс. */
+  earlyBy?: number
+}
+
+/** Совсем в начале окна экстраполировать рано: слишком шумно. */
+const MIN_ELAPSED = 0.03
+const TIGHT_FROM = 85
+
+/**
+ * Сравнивает расход со временем: сколько окна прошло и сколько израсходовано.
+ * Если тратить так же ровно до конца, выйдет used / elapsed. Окно кончилось,
+ * лимит выбран или время сброса неизвестно — прогноза нет.
+ */
+function paceOf(l: Limit | undefined, now: number): Pace | undefined {
+  const total = l ? KIND_WINDOW_MS[l.kind] : undefined
+  if (!l || !total || !l.resetsAt || l.percentUsed >= 100) return undefined
+  const end = Date.parse(l.resetsAt)
+  if (Number.isNaN(end) || end <= now) return undefined
+  const spent = now - (end - total)
+  const frac = Math.min(1, Math.max(0, spent / total))
+  const elapsed = Math.round(frac * 100)
+  if (frac < MIN_ELAPSED) return { elapsed, projected: 0, verdict: 'early' }
+  const projected = Math.round(l.percentUsed / frac)
+  if (projected < TIGHT_FROM) return { elapsed, projected, verdict: 'ok' }
+  if (projected <= 100) return { elapsed, projected, verdict: 'tight' }
+  const runsOutAt = now + ((100 - l.percentUsed) / l.percentUsed) * spent
+  return { elapsed, projected, verdict: 'over', runsOutAt, earlyBy: end - runsOutAt }
+}
+
+function paceText(p: Pace, lang: Lang = L): string {
+  const s = STRINGS[lang]
+  const proj = Math.min(p.projected, 999)
+  if (p.verdict === 'early') return s.paceEarly
+  if (p.verdict === 'ok') return s.paceOk(p.elapsed, proj)
+  if (p.verdict === 'tight') return s.paceTight(p.elapsed, proj)
+  return s.paceOver(p.elapsed, spanText(p.earlyBy ?? 0, lang), clockText(p.runsOutAt ?? 0))
+}
+
+const paceColor = (p: Pace) =>
+  p.verdict === 'over' ? 'error' : p.verdict === 'tight' ? 'warning' : p.verdict === 'ok' ? 'success' : undefined
 /** Плавный цвет от зелёного (всё свободно) через жёлтый к красному (лимит кончился). */
 function gradient(p: number): string {
   const t = Math.min(100, Math.max(0, p)) / 100
@@ -183,30 +293,32 @@ function gradient(p: number): string {
   return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`
 }
 
-const WINDOW_NAMES: Record<string, string> = {
-  five_hour: '5 часов',
-  seven_day: 'Неделя',
-  seven_day_opus: 'Нед. Opus',
-  seven_day_sonnet: 'Нед. Sonnet',
-}
-const windowName = (kind: string) => WINDOW_NAMES[kind] ?? kind.replace(/_/g, ' ')
+/** Какие окна учитываем; названия лежат в строках по языкам. */
+const WINDOW_NAMES: Record<string, string> = STRINGS.en.windows
+const windowName = (kind: string) => S().windows[kind] ?? kind.replace(/_/g, ' ')
+
+// В журнале «нет папки», «нет текста» и «модель неизвестна» хранятся пустой
+// строкой (старые записи — русским текстом); показываем на выбранном языке.
+const NO_FOLDER = ['', 'без папки', 'no folder']
+const NO_MODEL = ['', 'неизвестно', 'unknown']
+const NO_PROMPT = ['', '(без текста)', '(no text)']
 
 const shortProject = (cwd: string) =>
-  /scratch-workspaces/i.test(cwd)
-    ? 'без папки'
-    : cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd
+  /scratch-workspaces/i.test(cwd) ? '' : cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd
+const projectLabel = (p: string) => (NO_FOLDER.includes(p) ? S().noFolder : p)
+const promptLabel = (p: string) => (NO_PROMPT.includes(p) ? S().noPrompt : p)
 const shortTool = (t: string) => {
   const m = t.match(/^mcp__(.+?)__/)
   if (!m) return t
   const server = m[1] ?? ''
-  return `mcp:${/^[0-9a-f-]{20,}$/i.test(server) ? 'коннектор' : server}`
+  return `mcp:${/^[0-9a-f-]{20,}$/i.test(server) ? S().connector : server}`
 }
 const shortModel = (m: string) =>
-  m.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/\[.*\]$/, '') || m
+  NO_MODEL.includes(m)
+    ? S().unknownModel
+    : m.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/\[.*\]$/, '') || m
 
 // ---------- краб ----------
-
-type Mood = 'chill' | 'busy' | 'sweaty' | 'saving' | 'asleep' | 'weekOut' | 'unknown'
 
 /**
  * Настроение по обоим лимитам. 5-часовой решает, как краб суетится сейчас;
@@ -224,58 +336,11 @@ function moodOf(p5: number | undefined, p7: number | undefined): Mood {
   return 'chill'
 }
 
-const PHRASES: Record<Mood, readonly string[]> = {
-  chill: [
-    'Запаса полно, клешни чешутся поработать',
-    'Море спокойное, лимиты тоже',
-    'Можно смело браться за большое',
-    'Щёлк-щёлк! Я готов',
-    'Свежий, как утренний прилив',
-  ],
-  busy: [
-    'Половина позади, но я ещё бодр',
-    'Работаем в хорошем темпе',
-    'Клешни в деле, запас ещё есть',
-    'Бегу боком, но уверенно',
-    'Не разгоняемся, но и не тормозим',
-  ],
-  sweaty: [
-    'Фух… пятичасовой почти всё, может, полегче?',
-    'Клешни дымятся, скоро передышка',
-    'Ещё чуть-чуть — и пятичасовой кончится',
-    'Самое время для мелких задач',
-    'Потею, но держусь до сброса',
-  ],
-  saving: [
-    'Сейчас свободно, но неделя почти съедена — бережём',
-    'Пятичасовой в норме, а неделю лучше растянуть',
-    'Тяжёлое отложим до сброса недели',
-    'Короткие сессии, лёгкие модели — неделя скажет спасибо',
-    'Иду на цыпочках: недельный лимит на исходе',
-  ],
-  asleep: [
-    'Пятичасовой всё. Сплю до сброса… zZz',
-    'Прилив ушёл, жду следующего… zZz',
-    'Клешни отдыхают до сброса',
-    'Перерыв! Самое время размять спину',
-  ],
-  weekOut: [
-    'Неделя закончилась. Впадаю в спячку… zZz',
-    'До сброса недели я в норке',
-    'Недельный всё — отдыхаем с чистой совестью',
-  ],
-  unknown: [
-    'Цифры придут после первого ответа',
-    'Принюхиваюсь к лимитам…',
-  ],
-}
-
 /** Фраза меняется раз в пару минут, у каждого окна краба своя последовательность. */
-function phraseOf(mood: Mood, now: number): string {
-  const list = PHRASES[mood]
+function phraseOf(mood: Mood, now: number, lang: Lang = L): string {
+  const list = PHRASES[lang].mood[mood]
   const slot = Math.floor(now / 120_000)
   return list[((slot % list.length) + list.length) % list.length] ?? list[0]!
-
 }
 
 // Клод в пикселях: X — тело, E — глаз, A — клешня, L — нога, . — пусто
@@ -312,8 +377,6 @@ const MOTION: Record<Mood, CrabMotion> = {
 const loop = 'repeatCount="indefinite"'
 
 /** Чем краб занят между делами. Меняется раз в минуту; пока Claude отвечает — кодит. */
-type Activity = 'walk' | 'coding' | 'coffee' | 'dance' | 'wave' | 'reading'
-
 const ACTIVITIES: Record<Mood, readonly Activity[]> = {
   chill: ['walk', 'coffee', 'dance', 'wave', 'reading', 'walk', 'coding'],
   busy: ['walk', 'coding', 'coffee', 'walk', 'reading'],
@@ -331,23 +394,6 @@ function activityOf(mood: Mood, now: number, isWorking: boolean): Activity {
   return list[Math.floor(now / 60_000) % list.length] ?? 'walk'
 }
 
-const WORKING_PHRASES = [
-  'Кодю вместе с Claude…',
-  'Тук-тук по клавишам',
-  'Компилирую мысли',
-  'Щас-щас, почти готово',
-]
-
-const ACTIVITY_PHRASES: Partial<Record<Activity, readonly string[]>> = {
-  coffee: ['Кофе-брейк, лимиты подождут', 'Морской капучино — лучший'],
-  dance: ['Танцую, пока запас есть!', 'Краб-диско 🕺'],
-  wave: ['Привет! 👋', 'Я тут, если что'],
-  reading: ['Читаю документацию, пока тихо', 'Изучаю, как расходовать меньше'],
-}
-
-/** Фраза: когда Claude работает — про работу, иначе про занятие или настроение. */
-type DayPart = 'night' | 'morning' | 'day' | 'evening'
-
 /** Время суток по часам этого компьютера. */
 function dayPartOf(now: number): DayPart {
   const h = new Date(now).getHours()
@@ -357,43 +403,21 @@ function dayPartOf(now: number): DayPart {
   return 'night'
 }
 
-const DAY_PHRASES: Record<DayPart, readonly string[]> = {
-  morning: [
-    'Доброе утро! Лимиты свежие, как бриз',
-    'Утренний кофе и первый коммит',
-    'Солнце встаёт — клешни просыпаются',
-  ],
-  day: [
-    'Полдень, самое рабочее время',
-    'Солнце в зените, код в процессе',
-    'Днём крабы особенно продуктивны',
-  ],
-  evening: [
-    'Закат красивый. Может, пора закругляться?',
-    'Вечерний прилив — время для ревью',
-    'Ещё пару задач — и на песочек',
-  ],
-  night: [
-    'Ночь, звёзды, код… романтика',
-    'Совы кодят, крабы тоже',
-    'Поздновато. Сон тоже полезен для кода',
-    'Луна светит — лимиты отдыхают',
-  ],
-}
-
-function sayingOf(mood: Mood, activity: Activity, now: number, isWorking: boolean): string {
+/** Фраза: когда Claude работает — про работу, иначе про занятие, время суток или лимиты. */
+function sayingOf(mood: Mood, activity: Activity, now: number, isWorking: boolean, lang: Lang = L): string {
+  const ph = PHRASES[lang]
   const slot = Math.floor(now / 120_000)
   const from = (list: readonly string[]) => list[slot % list.length] ?? list[0]!
-  if (isWorking && mood !== 'asleep' && mood !== 'weekOut') return from(WORKING_PHRASES)
+  if (isWorking && mood !== 'asleep' && mood !== 'weekOut') return from(ph.working)
   // Про лимиты важнее: в тревожных настроениях говорим о них, а не о кофе.
   const isCalm = mood === 'chill' || mood === 'busy'
-  const own = ACTIVITY_PHRASES[activity]
+  const own = ph.activity[activity]
   // Спокойный краб по очереди говорит о времени суток, о занятии и о лимитах.
   if (isCalm) {
-    if (slot % 3 === 0) return from(DAY_PHRASES[dayPartOf(now)])
+    if (slot % 3 === 0) return from(ph.day[dayPartOf(now)])
     if (slot % 3 === 1 && own) return from(own)
   }
-  return phraseOf(mood, now)
+  return phraseOf(mood, now, lang)
 }
 
 /** Фон: небо, светило, море и песок — по времени суток. */
@@ -698,7 +722,7 @@ async function backOff($: Engine, ms: number) {
   await $.fs.write(`${await dataDir($)}/limits.json`, JSON.stringify({ ...shared, backoffUntil: until }))
   const d = new Date(until)
   const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  await update($, pollNote, () => `Сервер просит спрашивать реже, жду до ${hhmm}. Цифры пока из ответов модели.`)
+  await update($, pollNote, () => S().noteBackoff(hhmm))
 }
 
 async function pollLimits($: Engine, isForced = false): Promise<void> {
@@ -709,7 +733,7 @@ async function pollLimits($: Engine, isForced = false): Promise<void> {
       await syncFromShared($)
       if (isForced) {
         const left = Math.ceil(((shared.backoffUntil ?? 0) - now) / 60_000)
-        await update($, pollNote, () => `Сервер просил подождать, ещё ~${left} мин. Цифры пока из ответов модели.`)
+        await update($, pollNote, () => S().noteBackoffLeft(left))
       }
       return
     }
@@ -721,15 +745,12 @@ async function pollLimits($: Engine, isForced = false): Promise<void> {
     await $.fs.write(`${await dataDir($)}/limits.json`, JSON.stringify({ ...shared, polledAt: now }))
     if (await $.env.get('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC')) {
       await syncFromShared($)
-      await update($, pollNote, () =>
-        'Сам не опрашиваю: в настройках включён CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC. ' +
-        'Цифры обновляются после ответов модели и общие для всех сессий.',
-      )
+      await update($, pollNote, () => S().noteNoTraffic)
       return
     }
     const auth = await $.session.authorize()
     if (!auth || auth.kind !== 'bearer') {
-      await update($, pollNote, () => 'сам не опрашиваю: сессия не через подписку')
+      await update($, pollNote, () => S().noteNoSubscription)
       return
     }
     const res = await $.http.fetch(USAGE_URL, {
@@ -743,7 +764,7 @@ async function pollLimits($: Engine, isForced = false): Promise<void> {
       return
     }
     if (!res.ok) {
-      await update($, pollNote, () => `опрос не удался: ответ ${res.status}`)
+      await update($, pollNote, () => S().notePollStatus(res.status))
       return
     }
     const body = JSON.parse(res.text) as Record<string, unknown>
@@ -759,13 +780,13 @@ async function pollLimits($: Engine, isForced = false): Promise<void> {
       })
     }
     if (found.length === 0) {
-      await update($, pollNote, () => 'опрос: в ответе нет лимитов')
+      await update($, pollNote, () => S().notePollEmpty)
       return
     }
     await saveMerged($, found, true)
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err)
-    await update($, pollNote, () => `опрос не удался: ${why.slice(0, 80)}`)
+    await update($, pollNote, () => S().notePollError(why.slice(0, 80)))
   }
 }
 
@@ -807,11 +828,11 @@ function groupBy(entries: readonly Entry[], by: By): Row[] {
     rows.set(label, r)
   }
   for (const e of entries) {
-    if (by === 'project') add(e.project, e)
+    if (by === 'project') add(projectLabel(e.project), e)
     else if (by === 'model') add(shortModel(e.model), e)
     else if (by === 'tool') {
       const total = Object.values(e.tools).reduce((a, b) => a + b, 0)
-      if (total === 0) add('без инструментов (только текст)', e)
+      if (total === 0) add(S().noTools, e)
       for (const [t, n] of Object.entries(e.tools)) add(shortTool(t), e, n / total, n)
     }
   }
@@ -825,9 +846,11 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     project = shortProject(e.cwd)
+    await syncLang($)
     await $.command.register({
       name: 'crab',
-      description: 'Краб с лимитами: 5 часов, неделя и на что ушёл расход',
+      description: S().cmdDescription,
+      argumentHint: S().cmdArgumentHint,
     })
 
     // Стабилен между перезагрузками мода: момент запуска сессии.
@@ -849,6 +872,7 @@ export const register: Register = on => {
       const t = await $.clock.now()
       await update($, nowAtom, () => t)
       await syncFromShared($)
+      await syncLang($)
     })
     $.clock.every(60_000, () => syncLog($))
     // Сами спрашиваем лимиты раз в 5 минут, не дожидаясь ответа модели.
@@ -863,9 +887,14 @@ export const register: Register = on => {
     return result
   })
 
-  on('command.run', { command: 'crab' }, async $ => {
+  on('command.run', { command: 'crab' }, async ($, e) => {
+    const [verb = '', arg = ''] = e.args.trim().split(/\s+/)
+    if (verb === 'lang') {
+      await toggleLang($, parseLang(arg))
+      return { text: S().langSet(S().langName) }
+    }
     await openView($, 'full')
-    return { text: 'Краб на посту.' }
+    return { text: S().cmdOpened }
   })
 
   on('session.measure', async ($, e, next) => {
@@ -916,8 +945,8 @@ export const register: Register = on => {
     const entry: Entry = {
       at: await $.clock.now(),
       project,
-      model: done.model || 'неизвестно',
-      prompt: done.prompt || '(без текста)',
+      model: done.model || '',
+      prompt: done.prompt || '',
       usd: Math.max(0, (usage.cost?.usd ?? 0) - done.baseUsd),
       p5: Math.max(0, (pick(usage.rateLimits, 'five_hour')?.percentUsed ?? done.base5) - done.base5),
       p7: Math.max(0, (pick(usage.rateLimits, 'seven_day')?.percentUsed ?? done.base7) - done.base7),
@@ -935,6 +964,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
+    const lang = await read($, langAtom)
+    L = lang
+    const s = STRINGS[lang]
     const list = await read($, limits)
     const at = await read($, limitsAt)
     const now = (await read($, nowAtom)) || at
@@ -955,25 +987,37 @@ export const register: Register = on => {
     const mood = moodOf(v5?.percentUsed, v7?.percentUsed)
     const isWorking = await read($, working)
     const activity = activityOf(mood, now, isWorking)
-    const saying = sayingOf(mood, activity, now, isWorking)
+    const saying = sayingOf(mood, activity, now, isWorking, lang)
     const pin = await read($, pinned)
+    const hasPace = [v5, v7].some(l => paceOf(l, now) !== undefined)
 
-    const limitRow = (name: string, l?: Limit) => (
-      <Box flexDirection="column">
-        <Text>
-          <Text weight="semibold">{name.padEnd(11)}</Text>
-          {l ? (
-            <Text>
-              <Text color={gradient(l.percentUsed)}>{bar(l.percentUsed, barW)}</Text>
-              <Text weight="semibold" color={gradient(l.percentUsed)} tabular> {pct(l.percentUsed).padStart(4)}</Text>
+    const limitRow = (name: string, l?: Limit) => {
+      const pace = paceOf(l, now)
+      const parts = l ? barParts(l.percentUsed, barW, pace?.elapsed) : undefined
+      return (
+        <Box flexDirection="column">
+          <Text>
+            <Text weight="semibold">{name.padEnd(11)}</Text>
+            {l && parts ? (
+              <Text>
+                <Text color={gradient(l.percentUsed)}>{parts.before}</Text>
+                {parts.mark ? <Text>{parts.mark}</Text> : null}
+                <Text color={gradient(l.percentUsed)}>{parts.after}</Text>
+                <Text weight="semibold" color={gradient(l.percentUsed)} tabular> {pct(l.percentUsed).padStart(4)}</Text>
+              </Text>
+            ) : (
+              <Text dimColor>{s.noData}</Text>
+            )}
+          </Text>
+          {l && <Text dimColor>{' '.repeat(11)}{untilText(l.resetsAt, now, lang)}</Text>}
+          {pace && (
+            <Text color={paceColor(pace)} dimColor={pace.verdict === 'early'}>
+              {' '.repeat(11)}{paceText(pace, lang)}
             </Text>
-          ) : (
-            <Text dimColor>нет данных</Text>
           )}
-        </Text>
-        {l && <Text dimColor>{' '.repeat(11)}{untilText(l.resetsAt, now)}</Text>}
-      </Box>
-    )
+        </Box>
+      )
+    }
 
     const crab =
       e.surface === 'terminal' || !('Svg' in ui) ? (
@@ -983,7 +1027,7 @@ export const register: Register = on => {
           ))}
         </Box>
       ) : (
-        <ui.Svg source={crabSvg(mood, activity, 1, now)} alt={`Краб: ${saying}`} isInteractive />
+        <ui.Svg source={crabSvg(mood, activity, 1, now)} alt={s.crabAlt(saying)} isInteractive />
       )
 
     // ---- на что ушло ----
@@ -1025,11 +1069,7 @@ export const register: Register = on => {
 
     const breakdown =
       inWin.length === 0 ? (
-        <Text dimColor>
-          {entries.length === 0
-            ? 'Пока пусто: учёт начнётся с ответа в любой сессии с этим модом.'
-            : 'В этом окне ещё ничего не потрачено.'}
-        </Text>
+        <Text dimColor>{entries.length === 0 ? s.emptyLog : s.emptyWindow}</Text>
       ) : by === 'top' ? (
         <Box flexDirection="column">
           {[...inWin]
@@ -1039,10 +1079,10 @@ export const register: Register = on => {
               <Box flexDirection="column">
                 <Text wrap="truncate-end">
                   <Text weight="semibold" color="claude" tabular>{pct(share(x.usd)).padStart(4)} </Text>
-                  <Text>{x.project}</Text>
-                  <Text dimColor> · {shortModel(x.model)}{x.subagents ? ` · ${x.subagents} сабаг.` : ''}</Text>
+                  <Text>{projectLabel(x.project)}</Text>
+                  <Text dimColor> · {shortModel(x.model)}{x.subagents ? ` · ${x.subagents} ${s.subShort}` : ''}</Text>
                 </Text>
-                <Text dimColor wrap="truncate-end">        «{x.prompt}»</Text>
+                <Text dimColor wrap="truncate-end">        «{promptLabel(x.prompt)}»</Text>
               </Box>
             ))}
         </Box>
@@ -1055,25 +1095,37 @@ export const register: Register = on => {
                 <Text>{(r.label.length > nameW ? r.label.slice(0, nameW - 1) + '…' : r.label).padEnd(nameW)}</Text>
                 <Text color="claude"> {bar(share(r.usd), 8)}</Text>
                 <Text weight="semibold" tabular> {pct(share(r.usd)).padStart(4)}</Text>
-                <Text dimColor tabular> · {by === 'tool' ? `${r.count} выз.` : `${r.count} запр.`}</Text>
+                <Text dimColor tabular> · {r.count} {by === 'tool' ? s.calls : s.requests}</Text>
               </Text>
             ))}
         </Box>
       )
+
+    const langSwitch = (
+      <Button key="lang-toggle" plain onPress={() => toggleLang($)}>
+        <Text>
+          <Text dimColor>🌐 </Text>
+          <Text weight={lang === 'en' ? 'semibold' : undefined} dimColor={lang !== 'en'}>EN</Text>
+          <Text dimColor> · </Text>
+          <Text weight={lang === 'ru' ? 'semibold' : undefined} dimColor={lang !== 'ru'}>RU</Text>
+        </Text>
+      </Button>
+    )
 
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column" alignItems="flex-start" rowGap={1}>
           {crab}
           <Text italic color="claude">«{saying}»</Text>
-          <Box flexDirection="row" columnGap={1} flexWrap="wrap">
+          <Box flexDirection="row" columnGap={2} flexWrap="wrap">
             <Button
               key="pin-full"
               plain
               onPress={() => setPinned($, pin === 'full' ? 'none' : 'full')}
             >
-              <Text dimColor={pin !== 'full'}>{pin === 'full' ? '📌 открывается при запуске' : '📍 открывать при запуске'}</Text>
+              <Text dimColor={pin !== 'full'}>{pin === 'full' ? s.pinOn : s.pinOff}</Text>
             </Button>
+            {langSwitch}
           </Box>
         </Box>
 
@@ -1083,14 +1135,15 @@ export const register: Register = on => {
           {list
             .filter(l => l.kind !== 'five_hour' && l.kind !== 'seven_day' && l.kind in WINDOW_NAMES)
             .map(l => limitRow(windowName(l.kind), live(l)))}
+          {hasPace && <Text dimColor>{s.paceLegend}</Text>}
         </Box>
         <Box flexDirection="column" rowGap={1}>
           <Box flexDirection="row" columnGap={1} alignItems="center" flexWrap="wrap">
-            <Button key="refresh" label="↻ Обновить" onPress={() => pollLimits($, true)} />
+            <Button key="refresh" label={s.refresh} onPress={() => pollLimits($, true)} />
             {at > 0 && (
               <Text dimColor>
-                обновлено {Math.max(0, Math.round((now - at) / 60_000))} мин назад
-                {note ? '' : ' · само раз в 5 мин'}
+                {s.updatedAgo(Math.max(0, Math.round((now - at) / 60_000)))}
+                {note ? '' : s.autoEvery}
               </Text>
             )}
           </Box>
@@ -1098,18 +1151,18 @@ export const register: Register = on => {
         </Box>
 
         <Box flexDirection="column" rowGap={1}>
-          <Text weight="semibold">На что ушло</Text>
+          <Text weight="semibold">{s.whereItWent}</Text>
           <Box flexDirection="row" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
-            <Text dimColor>За:</Text>
-            {winTab('5h', '5 часов')}
-            {winTab('7d', 'Неделя')}
+            <Text dimColor>{s.over}</Text>
+            {winTab('5h', s.win5h)}
+            {winTab('7d', s.win7d)}
           </Box>
           <Box flexDirection="row" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
-            <Text dimColor>По:</Text>
-            {byTab('project', 'Проекты')}
-            {byTab('model', 'Модели')}
-            {byTab('tool', 'Инструменты')}
-            {byTab('top', 'Самые тяжёлые')}
+            <Text dimColor>{s.by}</Text>
+            {byTab('project', s.byProject)}
+            {byTab('model', s.byModel)}
+            {byTab('tool', s.byTool)}
+            {byTab('top', s.byTop)}
           </Box>
         </Box>
 
@@ -1118,21 +1171,18 @@ export const register: Register = on => {
         {inWin.length > 0 && (
           <Box flexDirection="column">
             <Text dimColor>
-              Всего {inWin.length} запр.
-              {totals.subagents ? ` · ${totals.subagents} ходов сабагентов` : ''}
+              {s.total(inWin.length)}
+              {totals.subagents ? s.subagentTurns(totals.subagents) : ''}
             </Text>
             <Text dimColor>
-              Токены: ввод {tok(totals.inTok)} · вывод {tok(totals.outTok)} · кэш-запись {tok(totals.cacheWrite)} · кэш-чтение {tok(totals.cacheRead)}
+              {s.tokens(tok(totals.inTok), tok(totals.outTok), tok(totals.cacheWrite), tok(totals.cacheRead))}
             </Text>
           </Box>
         )}
-        <Text dimColor>
-          Доля считается по стоимости токенов: дорогая модель и длинный контекст съедают лимит быстрее.
-          Никаких денег не списывается. Учитываются только сессии с этим модом.
-        </Text>
+        <Text dimColor>{s.footnote}</Text>
         <Box flexDirection="row" gap={1}>
           {/* Панель правил открывает мод session-rules по нажатию этой кнопки. */}
-          <Button key="open-rules" label="📏 Правила сессии" onPress={() => undefined} />
+          <Button key="open-rules" label={s.rulesButton} onPress={() => undefined} />
         </Box>
       </Box>
     )
@@ -1140,7 +1190,7 @@ export const register: Register = on => {
 
   // Кнопка «🦀 Лимиты» в панели правил открывает нашу панель.
   on('ui.press', { plugin: 'session-rules', element: 'crab' }, async ($, e, next) => {
-    await $.ui.open({ id: PANE, title: '🦀 Лимиты' })
+    await $.ui.open({ id: PANE, title: S().paneTitle })
     return next(e)
   })
 
@@ -1151,6 +1201,9 @@ export const register: Register = on => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
     const { Box, Text, Button } = $.ui.resolve(e)
+    const lang = await read($, langAtom)
+    L = lang
+    const s = STRINGS[lang]
     const list = await read($, limits)
     const now = (await read($, nowAtom)) || (await read($, limitsAt))
     const live = (l?: Limit) =>
@@ -1162,13 +1215,17 @@ export const register: Register = on => {
     const mood = moodOf(l5?.percentUsed, l7?.percentUsed)
     const face =
       mood === 'asleep' || mood === 'weekOut' ? '😴' : mood === 'sweaty' ? '💦' : mood === 'saving' ? '⏳' : '🦀'
+    const reset = (l: Limit) => {
+      const u = untilInfo(l.resetsAt, now, lang)
+      return u.kind === 'left' ? s.bandReset(u.span) : ''
+    }
     const part = (name: string, l?: Limit) =>
       l ? (
         <Text>
           <Text dimColor>{name} </Text>
           {isWide && <Text color={gradient(l.percentUsed)}>{bar(l.percentUsed, 6)} </Text>}
           <Text weight="semibold" color={gradient(l.percentUsed)}>{pct(l.percentUsed)}</Text>
-          {isWide && <Text dimColor> · {untilText(l.resetsAt, now).replace('сброс через ', '↻ ').replace(/ \(.*\)$/, '')}</Text>}
+          {isWide && reset(l) && <Text dimColor> · {reset(l)}</Text>}
         </Text>
       ) : (
         <Text dimColor>{name} —</Text>
@@ -1178,10 +1235,10 @@ export const register: Register = on => {
       <Box flexDirection="column" rowGap={1}>
         <Box flexDirection="row" columnGap={2} rowGap={1} alignItems="center" flexWrap="wrap">
           <Text color="claude">{face}</Text>
-          {part('5ч', l5)}
-          {part('нед', l7)}
-          <Button key="band-crab" label="🦀 Подробнее" onPress={() => openView($, 'full')} />
-          <Button key="open-rules" label="📏 Правила" onPress={() => undefined} />
+          {part(s.bandFive, l5)}
+          {part(s.bandWeek, l7)}
+          <Button key="band-crab" label={s.bandDetails} onPress={() => openView($, 'full')} />
+          <Button key="open-rules" label={s.bandRules} onPress={() => undefined} />
         </Box>
         {below.type === 'engine' ? null : below}
       </Box>
